@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from ast_slicer import PythonProgramSlicer
+from alert_canonicalizer import canonicalize_alerts
 from bandit_engine import get_bandit_tests, get_bandit_version, run_bandit
 from semgrep_engine import get_semgrep_rule_ids, get_semgrep_version, run_semgrep
 from scan_scope import collect_python_targets, relative_target_manifest, target_manifest_sha256
@@ -383,7 +384,7 @@ def save_json(path, value):
     )
 
 
-def proportional_sample(dataframe, sample_size, seed):
+def proportional_sample(dataframe, sample_size, seed, id_column):
     if dataframe.empty or sample_size <= 0:
         return dataframe.head(0).copy()
 
@@ -419,8 +420,8 @@ def proportional_sample(dataframe, sample_size, seed):
     result = pd.concat(samples, ignore_index=True)
 
     if len(result) < sample_size:
-        used = set(result["alert_id"])
-        remaining_rows = dataframe[~dataframe["alert_id"].isin(used)]
+        used = set(result[id_column])
+        remaining_rows = dataframe[~dataframe[id_column].isin(used)]
         needed = min(sample_size - len(result), len(remaining_rows))
 
         if needed:
@@ -673,6 +674,11 @@ def run_pipeline(args):
     for index, alert in enumerate(all_alerts, start=1):
         alert["alert_id"] = f"ALT-{index:06d}"
 
+    enriched_alerts, canonical_findings = canonicalize_alerts(
+        all_alerts,
+        repository_locations,
+    )
+
     scan_manifest = pd.DataFrame(scan_rows)
     scan_manifest.to_csv(
         processed_root / "scan_manifest.csv",
@@ -682,18 +688,31 @@ def run_pipeline(args):
     save_json(
         processed_root / "raw_alerts_unified.json",
         {
-            "total_alerts": len(all_alerts),
-            "alerts": all_alerts,
+            "total_alerts": len(enriched_alerts),
+            "alerts": enriched_alerts,
         },
     )
 
-    alerts_df = pd.DataFrame(all_alerts)
+    alerts_df = pd.DataFrame(enriched_alerts)
+    canonical_df = pd.DataFrame(canonical_findings)
 
     if not alerts_df.empty:
+        alerts_df.to_csv(
+            processed_root / "scanner_alerts.csv",
+            index=False,
+        )
         alerts_df.to_csv(
             processed_root / "alerts_unified.csv",
             index=False,
         )
+
+    if not canonical_df.empty:
+        canonical_df.to_csv(
+            processed_root / "canonical_findings.csv",
+            index=False,
+        )
+
+    if not alerts_df.empty:
 
         cwe_distribution = (
             alerts_df.groupby(["cwe_id", "scanner"])
@@ -732,8 +751,23 @@ def run_pipeline(args):
         )
 
         if not args.skip_slicing:
+            slice_inputs = []
+            for finding in canonical_findings:
+                slice_inputs.append(
+                    {
+                        "alert_id": finding["finding_id"],
+                        "repo_id": finding["repo_id"],
+                        "repository": finding["repository"],
+                        "commit_sha": finding["commit_sha"],
+                        "scanner": finding["scanners"],
+                        "rule_id": finding["rule_ids"],
+                        "cwe_id": finding["cwe_id"],
+                        "filename": finding["filename"],
+                        "line_number": finding["statement_start"],
+                    }
+                )
             slices = generate_slices(
-                all_alerts,
+                slice_inputs,
                 repository_locations,
             )
             save_json(
@@ -744,10 +778,37 @@ def run_pipeline(args):
                 },
             )
 
+    if not canonical_df.empty:
+        canonical_cwe_distribution = (
+            canonical_df.groupby(["cwe_id", "security_family"])
+            .size()
+            .reset_index(name="finding_count")
+        )
+        canonical_cwe_distribution["percentage"] = (
+            canonical_cwe_distribution["finding_count"]
+            / len(canonical_df)
+            * 100
+        ).round(2)
+        canonical_cwe_distribution.to_csv(
+            result_root / "canonical_distribution_by_cwe.csv",
+            index=False,
+        )
+
+        canonical_domain_distribution = (
+            canonical_df.groupby(["domain", "security_family"])
+            .size()
+            .reset_index(name="finding_count")
+        )
+        canonical_domain_distribution.to_csv(
+            result_root / "canonical_distribution_by_domain.csv",
+            index=False,
+        )
+
         annotation_sample = proportional_sample(
-            alerts_df,
-            min(args.annotation_sample_size, len(alerts_df)),
+            canonical_df,
+            min(args.annotation_sample_size, len(canonical_df)),
             args.seed,
+            "finding_id",
         )
         annotation_sample["annotator_1_label"] = "PENDING"
         annotation_sample["annotator_2_label"] = "PENDING"
@@ -769,7 +830,10 @@ def run_pipeline(args):
         "repositories_requested": len(manifest),
         "repositories_successful": successful,
         "repositories_failed": failed,
-        "total_alerts": len(all_alerts),
+        "total_alerts": len(enriched_alerts),
+        "total_scanner_alerts": len(enriched_alerts),
+        "total_canonical_findings": len(canonical_findings),
+        "cross_scanner_duplicate_alerts": len(enriched_alerts) - len(canonical_findings),
         "bandit_errors": bandit_errors_total,
         "semgrep_errors": semgrep_errors_total,
         "bandit_version": get_bandit_version(),
@@ -784,6 +848,8 @@ def run_pipeline(args):
         "transport": args.transport,
         "scope": args.scope,
         "targeting_strategy": "shared_python_file_manifest",
+        "finding_unit": "canonical_source_statement_plus_security_family",
+        "raw_scanner_alerts_preserved": True,
         "target_file_extension": ".py",
         "excluded_directory_names": excluded_directories,
         "total_target_files": target_files_total,
