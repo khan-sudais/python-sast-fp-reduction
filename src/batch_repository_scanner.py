@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -8,12 +9,16 @@ from pathlib import Path
 import pandas as pd
 
 from ast_slicer import PythonProgramSlicer
-from bandit_engine import get_bandit_version, run_bandit
-from semgrep_engine import get_semgrep_version, run_semgrep
+from bandit_engine import get_bandit_tests, get_bandit_version, run_bandit
+from semgrep_engine import get_semgrep_rule_ids, get_semgrep_version, run_semgrep
+from scan_scope import collect_python_targets, relative_target_manifest, target_manifest_sha256
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST = PROJECT_ROOT / "data" / "curated_100_repositories.xlsx"
+DEFAULT_BANDIT_CONFIG = PROJECT_ROOT / "config" / "bandit.yaml"
+DEFAULT_SEMGREP_CONFIG = PROJECT_ROOT / "config" / "semgrep-python-security.yml"
+PROTOCOL_FILE = PROJECT_ROOT / "config" / "scanner_protocol.json"
 REPOSITORY_CACHE = PROJECT_ROOT / "data" / "generated" / "repositories"
 GENERATED_ROOT = PROJECT_ROOT / "data" / "generated" / "runs"
 RESULTS_ROOT = PROJECT_ROOT / "results_generated"
@@ -34,6 +39,66 @@ PRODUCTION_EXCLUDES = (
     "dist",
 )
 
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_scanner_protocol(bandit_config, semgrep_config):
+    if not PROTOCOL_FILE.exists():
+        raise FileNotFoundError(f"Scanner protocol not found: {PROTOCOL_FILE}")
+
+    protocol = json.loads(PROTOCOL_FILE.read_text(encoding="utf-8"))
+
+    if protocol.get("targeting_strategy") != "shared_python_file_manifest":
+        raise RuntimeError("Unsupported scanner targeting strategy")
+
+    required_bandit = protocol.get("bandit", {}).get("required_version")
+    required_semgrep = protocol.get("semgrep", {}).get("required_version")
+    installed_bandit = get_bandit_version()
+    installed_semgrep = get_semgrep_version()
+
+    if required_bandit and installed_bandit != required_bandit:
+        raise RuntimeError(
+            f"Bandit version mismatch: required {required_bandit}, installed {installed_bandit}"
+        )
+
+    if required_semgrep and installed_semgrep != required_semgrep:
+        raise RuntimeError(
+            f"Semgrep version mismatch: required {required_semgrep}, installed {installed_semgrep}"
+        )
+
+    bandit_path = Path(bandit_config).resolve()
+    semgrep_path = Path(semgrep_config).resolve()
+
+    if not bandit_path.exists():
+        raise FileNotFoundError(f"Bandit config not found: {bandit_path}")
+
+    if not semgrep_path.exists():
+        raise FileNotFoundError(f"Semgrep config not found: {semgrep_path}")
+
+    bandit_hash = file_sha256(bandit_path)
+    semgrep_hash = file_sha256(semgrep_path)
+
+    if bandit_path == DEFAULT_BANDIT_CONFIG.resolve():
+        expected = protocol.get("bandit_config_sha256")
+        if expected and bandit_hash != expected:
+            raise RuntimeError(
+                "Bandit config hash does not match scanner_protocol.json"
+            )
+
+    if semgrep_path == DEFAULT_SEMGREP_CONFIG.resolve():
+        expected = protocol.get("semgrep_config_sha256")
+        if expected and semgrep_hash != expected:
+            raise RuntimeError(
+                "Semgrep config hash does not match scanner_protocol.json"
+            )
+
+    return protocol, bandit_hash, semgrep_hash
 
 def run_git(arguments, cwd=None):
     command = ["git", *arguments]
@@ -423,15 +488,19 @@ def scan_excludes(scope, extra_excludes):
     extra = list(extra_excludes or [])
 
     if scope == "all":
-        return extra, extra
+        return extra
 
     excludes = list(PRODUCTION_EXCLUDES)
     excludes.extend(extra)
-
-    return list(excludes), list(excludes)
+    return excludes
 
 
 def run_pipeline(args):
+    protocol, bandit_config_hash, semgrep_config_hash = validate_scanner_protocol(
+        args.bandit_config,
+        args.semgrep_config,
+    )
+
     manifest = load_manifest(
         args.manifest,
         selected_repositories=args.repo,
@@ -453,7 +522,7 @@ def run_pipeline(args):
     all_alerts = []
     scan_rows = []
     repository_locations = {}
-    bandit_excludes, semgrep_excludes = scan_excludes(
+    excluded_directories = scan_excludes(
         args.scope,
         args.exclude,
     )
@@ -475,6 +544,8 @@ def run_pipeline(args):
             "bandit_errors": 0,
             "semgrep_findings": 0,
             "semgrep_errors": 0,
+            "target_files": 0,
+            "target_manifest_sha256": "",
             "error": "",
         }
 
@@ -489,18 +560,43 @@ def run_pipeline(args):
             repository_locations[repository] = repository_path
             scan_record["commit_sha"] = commit_sha
 
-            bandit_report = run_bandit(
+            targets = collect_python_targets(
                 repository_path,
+                excluded_directories,
+            )
+            relative_targets = relative_target_manifest(
+                repository_path,
+                targets,
+            )
+            target_hash = target_manifest_sha256(relative_targets)
+
+            scan_record["target_files"] = len(targets)
+            scan_record["target_manifest_sha256"] = target_hash
+
+            save_json(
+                repo_raw_dir / "target_manifest.json",
+                {
+                    "repository": repository,
+                    "commit_sha": commit_sha,
+                    "targeting_strategy": "shared_python_file_manifest",
+                    "target_files": len(relative_targets),
+                    "target_manifest_sha256": target_hash,
+                    "excluded_directory_names": excluded_directories,
+                    "files": relative_targets,
+                },
+            )
+
+            bandit_report = run_bandit(
+                targets,
                 output_json=repo_raw_dir / "bandit.json",
-                exclude=bandit_excludes,
+                config=args.bandit_config,
+                tests=protocol["bandit"]["tests"],
             )
 
             semgrep_report = run_semgrep(
-                repository_path,
+                targets,
                 output_json=repo_raw_dir / "semgrep.json",
                 config=args.semgrep_config,
-                exclude=semgrep_excludes,
-                include=["*.py"],
             )
 
             current_alerts = []
@@ -543,11 +639,15 @@ def run_pipeline(args):
                     "bandit_version": get_bandit_version(),
                     "semgrep_version": get_semgrep_version(),
                     "transport": args.transport,
-                    "semgrep_config": args.semgrep_config,
+                    "bandit_config": str(Path(args.bandit_config).resolve()),
+                    "bandit_config_sha256": bandit_config_hash,
+                    "semgrep_config": str(Path(args.semgrep_config).resolve()),
+                    "semgrep_config_sha256": semgrep_config_hash,
+                    "scanner_protocol_version": protocol.get("protocol_version"),
+                    "targeting_strategy": "shared_python_file_manifest",
                     "scope": args.scope,
-                    "bandit_excludes": bandit_excludes,
-                    "semgrep_excludes": semgrep_excludes,
-                    "semgrep_includes": ["*.py"],
+                    "excluded_directory_names": excluded_directories,
+                    "target_file_extension": ".py",
                 },
             )
 
@@ -556,6 +656,7 @@ def run_pipeline(args):
                 f"BanditErrors={scan_record['bandit_errors']} "
                 f"Semgrep={scan_record['semgrep_findings']} "
                 f"SemgrepErrors={scan_record['semgrep_errors']} "
+                f"TargetFiles={scan_record['target_files']} "
                 f"SHA={commit_sha[:12]}"
             )
         except Exception as exc:
@@ -661,6 +762,7 @@ def run_pipeline(args):
     failed = int((scan_manifest["status"] == "FAILED").sum())
     bandit_errors_total = int(scan_manifest["bandit_errors"].sum())
     semgrep_errors_total = int(scan_manifest["semgrep_errors"].sum())
+    target_files_total = int(scan_manifest["target_files"].sum())
 
     summary = {
         "run_id": args.run_id,
@@ -672,12 +774,19 @@ def run_pipeline(args):
         "semgrep_errors": semgrep_errors_total,
         "bandit_version": get_bandit_version(),
         "semgrep_version": get_semgrep_version(),
-        "semgrep_config": args.semgrep_config,
+        "bandit_config": str(Path(args.bandit_config).resolve()),
+        "bandit_config_sha256": bandit_config_hash,
+        "semgrep_config": str(Path(args.semgrep_config).resolve()),
+        "semgrep_config_sha256": semgrep_config_hash,
+        "scanner_protocol_version": protocol.get("protocol_version"),
+        "bandit_tests": get_bandit_tests(),
+        "semgrep_rule_ids": get_semgrep_rule_ids(),
         "transport": args.transport,
         "scope": args.scope,
-        "bandit_excludes": bandit_excludes,
-        "semgrep_excludes": semgrep_excludes,
-        "semgrep_includes": ["*.py"],
+        "targeting_strategy": "shared_python_file_manifest",
+        "target_file_extension": ".py",
+        "excluded_directory_names": excluded_directories,
+        "total_target_files": target_files_total,
     }
 
     save_json(result_root / "run_summary.json", summary)
@@ -708,8 +817,12 @@ def main():
         type=int,
     )
     parser.add_argument(
+        "--bandit-config",
+        default=str(DEFAULT_BANDIT_CONFIG),
+    )
+    parser.add_argument(
         "--semgrep-config",
-        default="auto",
+        default=str(DEFAULT_SEMGREP_CONFIG),
     )
     parser.add_argument(
         "--scope",
