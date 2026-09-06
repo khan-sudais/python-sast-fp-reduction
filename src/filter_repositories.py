@@ -1,15 +1,15 @@
-"""
-Repository Selection Pipeline (Adheres to Rule 6 of Master Research Rules)
-Filters an initial population of 1,200 public Python repositories down to
-50 Primary Core Repositories + 50 Holdout Validation Repositories (100 Total).
-"""
+from pathlib import Path
+
 import pandas as pd
 import json
-import os
 
-REPOS_OUTPUT_CSV = "/working_dir/c_1a2492e966f75732/research-project/03_DATA/processed/main_dataset/curated_100_repositories.csv"
-PIPELINE_STATS_JSON = "/working_dir/c_1a2492e966f75732/research-project/03_DATA/processed/main_dataset/repository_filtering_funnel.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+GENERATED_DATA_DIR = PROJECT_ROOT / "data" / "generated"
+
+REPOS_OUTPUT_CSV = GENERATED_DATA_DIR / "curated_100_repositories.csv"
+PIPELINE_STATS_JSON = GENERATED_DATA_DIR / "repository_filtering_funnel.json"
 
 if __name__ == "__main__":
+    GENERATED_DATA_DIR.mkdir(parents=True, exist_ok=True)
     print("Filter repositories script ready.")
-

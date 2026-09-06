@@ -1,135 +1,163 @@
-"""
-Semgrep-Compatible Python Static Analysis Engine
-Scans Python code for security rule violations matching the Semgrep OSS schema.
-Implements canonical Semgrep registry rules for SQLi, Subprocess, Pickle, and Cert Validation.
-"""
-import ast
+import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
-class SemgrepASTScanner(ast.NodeVisitor):
-    def __init__(self, filename, lines):
-        self.filename = filename
-        self.lines = lines
-        self.results = []
-        self.formatted_vars = set()
 
-    def _record(self, check_id, message, severity, lineno, col_offset, cwe_id):
-        line_text = self.lines[lineno - 1] if 0 <= lineno - 1 < len(self.lines) else ""
-        self.results.append({
-            "check_id": check_id,
-            "path": self.filename,
-            "start": {"line": lineno, "col": col_offset},
-            "end": {"line": lineno, "col": col_offset + len(line_text.strip())},
-            "extra": {
-                "message": message,
-                "metadata": {
-                    "cwe": [f"CWE-{cwe_id}"],
-                    "confidence": "HIGH"
-                },
-                "severity": severity,
-                "lines": line_text.strip()
-            }
-        })
-
-    def visit_Assign(self, node):
-        if isinstance(node.value, (ast.JoinedStr, ast.BinOp)):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    self.formatted_vars.add(target.id)
-        self.generic_visit(node)
-
-    def visit_Call(self, node):
-        func_name = ""
-        full_attr = ""
-        if isinstance(node.func, ast.Name):
-            func_name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            func_name = node.func.attr
-            if isinstance(node.func.value, ast.Name):
-                full_attr = f"{node.func.value.id}.{func_name}"
-
-        # Semgrep: python.lang.security.audit.dangerous-system-call
-        if full_attr in ("os.system", "os.popen"):
-            self._record("python.lang.security.audit.dangerous-system-call",
-                         f"Direct call to {full_attr} identified.",
-                         "ERROR", node.lineno, node.col_offset, 78)
-
-        # Semgrep: python.lang.security.audit.subprocess-shell-true
-        if func_name in ("Popen", "call", "run", "check_call", "check_output"):
-            for kw in node.keywords:
-                if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
-                    self._record("python.lang.security.audit.subprocess-shell-true",
-                                 "subprocess call with shell=True identified.",
-                                 "ERROR", node.lineno, node.col_offset, 78)
-
-        # Semgrep: python.requests.security.disabled-cert-validation
-        if func_name in ("get", "post", "put", "delete", "request"):
-            for kw in node.keywords:
-                if kw.arg == "verify" and isinstance(kw.value, ast.Constant) and kw.value.value is False:
-                    self._record("python.requests.security.disabled-cert-validation",
-                                 "Certificate validation is explicitly disabled (verify=False).",
-                                 "WARNING", node.lineno, node.col_offset, 295)
-
-        # Semgrep: python.lang.security.deserialization.pickle
-        if func_name in ("loads", "load"):
-            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-                if node.func.value.id in ("pickle", "_pickle", "cPickle"):
-                    self._record("python.lang.security.deserialization.pickle",
-                                 "Insecure deserialization via pickle call.",
-                                 "ERROR", node.lineno, node.col_offset, 502)
-
-        # Semgrep: python.lang.security.audit.sqli.format-string-sql
-        if func_name in ("execute", "raw"):
-            if node.args:
-                first_arg = node.args[0]
-                is_dyn = False
-                if isinstance(first_arg, (ast.JoinedStr, ast.BinOp)):
-                    is_dyn = True
-                elif isinstance(first_arg, ast.Name) and first_arg.id in self.formatted_vars:
-                    is_dyn = True
-                if is_dyn:
-                    self._record("python.lang.security.audit.sqli.format-string-sql",
-                                 "Potential SQL injection from formatted query string in execute().",
-                                 "ERROR", node.lineno, node.col_offset, 89)
-
-        # Semgrep: python.lang.security.insecure-hash-function
-        if func_name in ("md5", "sha1"):
-            self._record("python.lang.security.insecure-hash-function",
-                         f"Insecure hash algorithm {func_name.upper()} detected.",
-                         "WARNING", node.lineno, node.col_offset, 327)
-
-        self.generic_visit(node)
-
-def scan_file(filepath):
+def get_semgrep_version():
     try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            lines = [l + "\n" for l in f.read().split("\n")]
-            code = "".join(lines)
-        tree = ast.parse(code, filename=filepath)
-        scanner = SemgrepASTScanner(filepath, lines)
-        scanner.visit(tree)
-        return scanner.results
-    except Exception:
-        return []
+        return version("semgrep")
+    except PackageNotFoundError:
+        return None
 
-def scan_directory(dirpath):
-    results = []
-    for root, _, files in os.walk(dirpath):
-        for f in files:
-            if f.endswith(".py"):
-                results.extend(scan_file(os.path.join(root, f)))
-    return {"results": results, "errors": []}
+
+def _find_semgrep():
+    executable = shutil.which("semgrep")
+    if executable:
+        return executable
+
+    candidates = [
+        Path(sys.executable).parent / "semgrep",
+        Path(sys.executable).parent / "semgrep.exe",
+        Path(sys.executable).parent / "Scripts" / "semgrep",
+        Path(sys.executable).parent / "Scripts" / "semgrep.exe",
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    raise RuntimeError(
+        "Semgrep executable was not found. Install the project requirements first."
+    )
+
+
+def run_semgrep(
+    target,
+    output_json=None,
+    config="auto",
+    exclude=None,
+    include=None,
+):
+    target_path = Path(target).resolve()
+
+    if not target_path.exists():
+        raise FileNotFoundError(f"Target does not exist: {target_path}")
+
+    semgrep = _find_semgrep()
+
+    command = [
+        semgrep,
+        "scan",
+        "--config",
+        str(config),
+        "--json",
+        "--quiet",
+    ]
+
+    if include:
+        values = include if isinstance(include, (list, tuple, set)) else [include]
+        for value in values:
+            command.extend(["--include", str(value)])
+
+    if exclude:
+        values = exclude if isinstance(exclude, (list, tuple, set)) else [exclude]
+        for value in values:
+            command.extend(["--exclude", str(value)])
+
+    command.append(str(target_path))
+
+    environment = os.environ.copy()
+    environment["PYTHONUTF8"] = "1"
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Semgrep failed with exit code {result.returncode}.\n"
+            f"stdout: {result.stdout.strip()}\n"
+            f"stderr: {result.stderr.strip()}"
+        )
+
+    try:
+        report = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Semgrep produced invalid JSON.\n"
+            f"stdout: {result.stdout.strip()}\n"
+            f"stderr: {result.stderr.strip()}"
+        ) from exc
+
+    if output_json is not None:
+        report_path = Path(output_json).resolve()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    return report
+
+
+def scan_file(filepath, config="auto"):
+    return run_semgrep(
+        filepath,
+        config=config,
+        include=["*.py"],
+    )
+
+
+def scan_directory(directory_path, config="auto"):
+    return run_semgrep(
+        directory_path,
+        config=config,
+        include=["*.py"],
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("target")
+    parser.add_argument("output_json")
+    parser.add_argument("--config", default="auto")
+    parser.add_argument("--include", action="append")
+    parser.add_argument("--exclude", action="append")
+    args = parser.parse_args()
+
+    includes = args.include if args.include else ["*.py"]
+
+    report = run_semgrep(
+        args.target,
+        output_json=args.output_json,
+        config=args.config,
+        exclude=args.exclude,
+        include=includes,
+    )
+
+    print(
+        json.dumps(
+            {
+                "semgrep_version": get_semgrep_version(),
+                "results": len(report.get("results", [])),
+                "errors": len(report.get("errors", [])),
+                "includes": includes,
+                "output": str(Path(args.output_json).resolve()),
+            },
+            indent=2,
+        )
+    )
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 semgrep_engine.py <target_path> [output_json]")
-        sys.exit(1)
-    target = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else "semgrep_results.json"
-    res = scan_directory(target) if os.path.isdir(target) else {"results": scan_file(target)}
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(res, f, indent=2)
-    print(f"Semgrep scanned {target}: {len(res['results'])} findings written to {out}")
-
+    main()

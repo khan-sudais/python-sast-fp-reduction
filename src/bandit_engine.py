@@ -1,160 +1,158 @@
-"""
-Bandit-Compatible Python AST Security Linter
-Implements canonical Bandit security plugin rules for reproducible SAST research.
-Outputs exact Bandit JSON format.
-"""
-import ast
+import argparse
 import json
 import os
-import sys
+import shutil
+import subprocess
+import tempfile
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
-class BanditASTVisitor(ast.NodeVisitor):
-    def __init__(self, filename, code_lines):
-        self.filename = filename
-        self.code_lines = code_lines
-        self.findings = []
-        self.formatted_vars = set()
 
-    def _get_code_snippet(self, lineno, window=3):
-        start = max(1, lineno - window)
-        end = min(len(self.code_lines), lineno + window)
-        snippet = "".join(self.code_lines[start-1:end])
-        return snippet, [start, end]
+def get_bandit_version():
+    try:
+        return version("bandit")
+    except PackageNotFoundError:
+        return None
 
-    def _add_issue(self, test_id, name, severity, confidence, text, lineno):
-        snippet, line_range = self._get_code_snippet(lineno)
-        self.findings.append({
-            "code": snippet,
-            "filename": self.filename,
-            "issue_confidence": confidence,
-            "issue_cwe": {
-                "id": self._get_cwe(test_id),
-                "link": f"https://cwe.mitre.org/data/definitions/{self._get_cwe(test_id)}.html"
-            },
-            "issue_severity": severity,
-            "issue_text": text,
-            "line_number": lineno,
-            "line_range": line_range,
-            "more_info": f"https://bandit.readthedocs.io/en/latest/plugins/{test_id.lower()}_{name.lower()}.html",
-            "test_id": test_id,
-            "test_name": name
-        })
 
-    def _get_cwe(self, test_id):
-        cwe_map = {
-            "B102": 78,
-            "B108": 377,
-            "B301": 502,
-            "B303": 327,
-            "B324": 328,
-            "B501": 295,
-            "B602": 78,
-            "B603": 78,
-            "B608": 89
-        }
-        return cwe_map.get(test_id, 20)
+def _find_bandit():
+    executable = shutil.which("bandit")
+    if executable:
+        return executable
 
-    def visit_Assign(self, node):
-        if isinstance(node.value, (ast.JoinedStr, ast.BinOp)):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    self.formatted_vars.add(target.id)
-        self.generic_visit(node)
+    candidates = [
+        Path(os.sys.executable).parent / "bandit",
+        Path(os.sys.executable).parent / "bandit.exe",
+        Path(os.sys.executable).parent / "Scripts" / "bandit.exe",
+        Path(os.sys.executable).parent / "Scripts" / "bandit",
+    ]
 
-    def visit_Call(self, node):
-        func_name = ""
-        if isinstance(node.func, ast.Name):
-            func_name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            func_name = node.func.attr
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
 
-        if func_name in ("exec", "eval"):
-            self._add_issue("B102", "exec_eval", "HIGH", "HIGH",
-                            f"Use of built-in {func_name}() detected.", node.lineno)
+    raise RuntimeError(
+        "Bandit executable was not found. Install the project requirements first."
+    )
 
-        if func_name in ("loads", "load"):
-            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-                if node.func.value.id in ("pickle", "_pickle", "cPickle"):
-                    self._add_issue("B301", "pickle", "HIGH", "HIGH",
-                                    "Pickle and modules that wrap it can be unsafe when used with untrusted data.", node.lineno)
 
-        if func_name in ("md5", "sha1"):
-            used_for_sec = True
-            for kw in node.keywords:
-                if kw.arg == "usedforsecurity" and isinstance(kw.value, ast.Constant) and kw.value.value is False:
-                    used_for_sec = False
-            if used_for_sec:
-                self._add_issue("B303", "md5_sha1", "MEDIUM", "HIGH",
-                                f"Use of insecure {func_name.upper()} hash function detected.", node.lineno)
+def run_bandit(target, output_json=None, exclude=None):
+    target_path = Path(target).resolve()
 
-        if func_name in ("get", "post", "put", "delete", "request"):
-            for kw in node.keywords:
-                if kw.arg == "verify" and isinstance(kw.value, ast.Constant) and kw.value.value is False:
-                    self._add_issue("B501", "request_with_no_cert_validation", "HIGH", "HIGH",
-                                    "Call to request with verify=False disabling SSL certificate checks.", node.lineno)
+    if not target_path.exists():
+        raise FileNotFoundError(f"Target does not exist: {target_path}")
 
-        if func_name in ("Popen", "call", "run", "check_call", "check_output"):
-            is_shell = False
-            for kw in node.keywords:
-                if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
-                    is_shell = True
-            if is_shell:
-                self._add_issue("B602", "subprocess_popen_with_shell_equals_true", "HIGH", "HIGH",
-                                f"subprocess call with shell=True identified ({func_name}), possible security issue.", node.lineno)
-            else:
-                self._add_issue("B603", "subprocess_without_shell_equals_true", "LOW", "HIGH",
-                                f"subprocess call - check for execution of untrusted input ({func_name}).", node.lineno)
+    bandit = _find_bandit()
+    temporary_output = output_json is None
 
-        if func_name in ("execute", "executemany"):
-            if node.args:
-                first_arg = node.args[0]
-                is_dyn = False
-                if isinstance(first_arg, (ast.JoinedStr, ast.BinOp)):
-                    is_dyn = True
-                elif isinstance(first_arg, ast.Name) and first_arg.id in self.formatted_vars:
-                    is_dyn = True
-                if is_dyn:
-                    self._add_issue("B608", "hardcoded_sql_expressions", "MEDIUM", "MEDIUM",
-                                    "Possible SQL injection vector through dynamic string formatting in execute().", node.lineno)
+    if temporary_output:
+        handle = tempfile.NamedTemporaryFile(
+            prefix="bandit_",
+            suffix=".json",
+            delete=False,
+        )
+        handle.close()
+        report_path = Path(handle.name)
+    else:
+        report_path = Path(output_json).resolve()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.generic_visit(node)
+    command = [
+        bandit,
+        "-f",
+        "json",
+        "-o",
+        str(report_path),
+        "--exit-zero",
+        "-q",
+    ]
 
-    def visit_Constant(self, node):
-        if isinstance(node.value, str):
-            for tmp in ("/tmp", "/var/tmp", "/dev/shm"):
-                if node.value.startswith(tmp):
-                    self._add_issue("B108", "hardcoded_tmp_directory", "MEDIUM", "MEDIUM",
-                                    f"Probable insecure usage of temp file/directory ({node.value}).", node.lineno)
-        self.generic_visit(node)
+    if target_path.is_dir():
+        command.append("-r")
+
+    if exclude:
+        if isinstance(exclude, (list, tuple, set)):
+            exclude_value = ",".join(str(item) for item in exclude)
+        else:
+            exclude_value = str(exclude)
+        command.extend(["-x", exclude_value])
+
+    command.append(str(target_path))
+
+    environment = os.environ.copy()
+    environment["PYTHONUTF8"] = "1"
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+    )
+
+    try:
+        if not report_path.exists():
+            raise RuntimeError(
+                f"Bandit did not create a JSON report.\n"
+                f"Exit code: {result.returncode}\n"
+                f"stdout: {result.stdout.strip()}\n"
+                f"stderr: {result.stderr.strip()}"
+            )
+
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Bandit produced invalid JSON at {report_path}: {exc}"
+            ) from exc
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Bandit failed with exit code {result.returncode}.\n"
+                f"stdout: {result.stdout.strip()}\n"
+                f"stderr: {result.stderr.strip()}"
+            )
+
+        return report
+    finally:
+        if temporary_output:
+            report_path.unlink(missing_ok=True)
+
 
 def scan_file(filepath):
-    try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            code = f.read()
-            code_lines = [line + "\n" for line in code.split("\n")]
-        tree = ast.parse(code, filename=filepath)
-        visitor = BanditASTVisitor(filepath, code_lines)
-        visitor.visit(tree)
-        return visitor.findings
-    except SyntaxError:
-        return []
+    return run_bandit(filepath)
+
 
 def scan_directory(directory_path):
-    all_results = []
-    for root, _, files in os.walk(directory_path):
-        for file in files:
-            if file.endswith(".py"):
-                all_results.extend(scan_file(os.path.join(root, file)))
-    return {"errors": [], "results": all_results}
+    return run_bandit(directory_path)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("target")
+    parser.add_argument("output_json")
+    parser.add_argument("--exclude", action="append")
+    args = parser.parse_args()
+
+    report = run_bandit(
+        args.target,
+        output_json=args.output_json,
+        exclude=args.exclude,
+    )
+
+    print(
+        json.dumps(
+            {
+                "bandit_version": get_bandit_version(),
+                "results": len(report.get("results", [])),
+                "errors": len(report.get("errors", [])),
+                "output": str(Path(args.output_json).resolve()),
+            },
+            indent=2,
+        )
+    )
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 bandit_engine.py <target_dir_or_file> [output_json]")
-        sys.exit(1)
-    target = sys.argv[1]
-    out_file = sys.argv[2] if len(sys.argv) > 2 else "bandit_results.json"
-    res = {"results": scan_file(target)} if os.path.isfile(target) else scan_directory(target)
-    with open(out_file, "w", encoding="utf-8") as out:
-        json.dump(res, out, indent=2)
-    print(f"Scanned {target}: Found {len(res['results'])} findings. Output written to {out_file}")
-
+    main()
