@@ -547,7 +547,6 @@ def run_pipeline(args):
                     "scope": args.scope,
                     "bandit_excludes": bandit_excludes,
                     "semgrep_excludes": semgrep_excludes,
-        "semgrep_includes": ["*.py"],
                     "semgrep_includes": ["*.py"],
                 },
             )
