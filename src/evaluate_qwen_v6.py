@@ -32,6 +32,10 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def relative_path(path):
+    return path.relative_to(PROJECT_ROOT).as_posix()
+
+
 def read_csv(path):
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
@@ -667,10 +671,10 @@ def main():
         "variant_metrics": metrics,
         "pairwise_mcnemar": mcnemar_rows,
         "outputs": {
-            "scored_predictions_csv": str(SCORED_CSV),
-            "variant_metrics_csv": str(METRICS_CSV),
-            "pairwise_mcnemar_csv": str(MCNEMAR_CSV),
-            "summary_json": str(SUMMARY_JSON),
+            "scored_predictions_csv": relative_path(SCORED_CSV),
+            "variant_metrics_csv": relative_path(METRICS_CSV),
+            "pairwise_mcnemar_csv": relative_path(MCNEMAR_CSV),
+            "summary_json": relative_path(SUMMARY_JSON),
         },
     }
 

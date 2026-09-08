@@ -25,6 +25,10 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def relative_path(path):
+    return path.relative_to(PROJECT_ROOT).as_posix()
+
+
 def read_jsonl(path):
     rows = []
     with path.open("r", encoding="utf-8") as handle:
@@ -368,9 +372,9 @@ def main():
         "result_manifest_mismatches": 0,
         "complete": True,
         "outputs": {
-            "csv": str(OUTPUT_CSV),
-            "json": str(OUTPUT_JSON),
-            "metadata": str(OUTPUT_METADATA),
+            "csv": relative_path(OUTPUT_CSV),
+            "json": relative_path(OUTPUT_JSON),
+            "metadata": relative_path(OUTPUT_METADATA),
         },
     }
 
