@@ -102,6 +102,7 @@ def main():
         writer = csv.DictWriter(
             handle,
             fieldnames=list(main_rows[0].keys()),
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(main_rows)
@@ -116,6 +117,7 @@ def main():
         writer = csv.DictWriter(
             handle,
             fieldnames=list(mcnemar_rows[0].keys()),
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(mcnemar_rows)
@@ -204,6 +206,7 @@ def main():
             ensure_ascii=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
     lines = [
@@ -259,6 +262,7 @@ def main():
     SUMMARY_MD.write_text(
         "\n".join(lines),
         encoding="utf-8",
+        newline="\n",
     )
 
     accuracy_values = [

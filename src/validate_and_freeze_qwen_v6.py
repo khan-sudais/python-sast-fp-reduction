@@ -25,6 +25,12 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def canonical_text_sha256(path):
+    text = path.read_text(encoding="utf-8")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def relative_path(path):
     return path.relative_to(PROJECT_ROOT).as_posix()
 
@@ -79,17 +85,19 @@ def main():
             f"Expected 900 manifest requests, found {len(manifest)}"
         )
 
-    protocol_sha = sha256(PROTOCOL)
-    manifest_sha = sha256(MANIFEST)
+    protocol_run_sha = manifest_metadata["protocol_sha256"]
+    manifest_run_sha = manifest_metadata["manifest_sha256"]
+    protocol_canonical_sha = canonical_text_sha256(PROTOCOL)
+    manifest_canonical_sha = canonical_text_sha256(MANIFEST)
 
-    if protocol_sha != manifest_metadata["protocol_sha256"]:
+    if protocol_canonical_sha != manifest_metadata["protocol_canonical_sha256"]:
         raise RuntimeError(
-            "Protocol SHA-256 does not match frozen manifest metadata"
+            "Protocol canonical SHA-256 does not match frozen manifest metadata"
         )
 
-    if manifest_sha != manifest_metadata["manifest_sha256"]:
+    if manifest_canonical_sha != manifest_metadata["manifest_canonical_sha256"]:
         raise RuntimeError(
-            "Manifest SHA-256 does not match frozen manifest metadata"
+            "Manifest canonical SHA-256 does not match frozen manifest metadata"
         )
 
     manifest_by_id = {row["request_id"]: row for row in manifest}
@@ -177,7 +185,7 @@ def main():
                     }
                 )
 
-        if result.get("protocol_sha256") != protocol_sha:
+        if result.get("protocol_sha256") != protocol_run_sha:
             mismatches.append(
                 {
                     "request_id": request_id,
@@ -185,7 +193,7 @@ def main():
                 }
             )
 
-        if result.get("manifest_sha256") != manifest_sha:
+        if result.get("manifest_sha256") != manifest_run_sha:
             mismatches.append(
                 {
                     "request_id": request_id,
@@ -223,7 +231,7 @@ def main():
                 missing_raw.append(request_id)
                 raw_sha = ""
             else:
-                raw_sha = sha256(raw_path)
+                raw_sha = canonical_text_sha256(raw_path)
 
         usage = usage_values(result)
 
@@ -286,6 +294,7 @@ def main():
     OUTPUT_JSON.write_text(
         json.dumps(rows_out, indent=2, ensure_ascii=False),
         encoding="utf-8",
+        newline="\n",
     )
 
     fields = [
@@ -323,7 +332,11 @@ def main():
         encoding="utf-8",
         newline="",
     ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fields,
+            lineterminator="\n",
+        )
         writer.writeheader()
 
         for row in rows_out:
@@ -362,11 +375,16 @@ def main():
             variant: dict(usage_by_variant[variant])
             for variant in sorted(usage_by_variant)
         },
-        "protocol_sha256": protocol_sha,
-        "manifest_sha256": manifest_sha,
-        "official_results_sha256": sha256(RESULTS),
-        "final_predictions_csv_sha256": sha256(OUTPUT_CSV),
-        "final_predictions_json_sha256": sha256(OUTPUT_JSON),
+        "hash_policy": "canonical_lf_text_v1",
+        "protocol_sha256": protocol_run_sha,
+        "protocol_canonical_sha256": protocol_canonical_sha,
+        "manifest_sha256": manifest_run_sha,
+        "manifest_canonical_sha256": manifest_canonical_sha,
+        "official_results_sha256": canonical_text_sha256(RESULTS),
+        "final_predictions_csv_sha256": canonical_text_sha256(OUTPUT_CSV),
+        "final_predictions_csv_canonical_sha256": canonical_text_sha256(OUTPUT_CSV),
+        "final_predictions_json_sha256": canonical_text_sha256(OUTPUT_JSON),
+        "final_predictions_json_canonical_sha256": canonical_text_sha256(OUTPUT_JSON),
         "raw_response_files_verified": len(rows_out),
         "raw_response_files_missing": 0,
         "result_manifest_mismatches": 0,
@@ -381,6 +399,7 @@ def main():
     OUTPUT_METADATA.write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False),
         encoding="utf-8",
+        newline="\n",
     )
 
     print(json.dumps(metadata, indent=2, ensure_ascii=False))

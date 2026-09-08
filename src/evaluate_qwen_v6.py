@@ -36,6 +36,12 @@ def relative_path(path):
     return path.relative_to(PROJECT_ROOT).as_posix()
 
 
+def canonical_text_sha256(path):
+    text = path.read_text(encoding="utf-8")
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def read_csv(path):
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return list(csv.DictReader(handle))
@@ -130,11 +136,11 @@ def main():
     gt_meta = json.loads(GT_META.read_text(encoding="utf-8"))
     pred_meta = json.loads(PRED_META.read_text(encoding="utf-8"))
 
-    if sha256(GT_CSV) != gt_meta["final_csv_sha256"]:
-        raise RuntimeError("Ground-truth CSV hash mismatch")
+    if canonical_text_sha256(GT_CSV) != gt_meta["final_csv_canonical_sha256"]:
+        raise RuntimeError("Ground-truth canonical CSV hash mismatch")
 
-    if sha256(PRED_CSV) != pred_meta["final_predictions_csv_sha256"]:
-        raise RuntimeError("Prediction CSV hash mismatch")
+    if canonical_text_sha256(PRED_CSV) != pred_meta["final_predictions_csv_canonical_sha256"]:
+        raise RuntimeError("Prediction canonical CSV hash mismatch")
 
     gt_rows = read_csv(GT_CSV)
     pred_rows = read_csv(PRED_CSV)
@@ -613,6 +619,7 @@ def main():
         writer = csv.DictWriter(
             handle,
             fieldnames=list(scored_rows[0].keys()),
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(scored_rows)
@@ -625,6 +632,7 @@ def main():
         writer = csv.DictWriter(
             handle,
             fieldnames=list(metric_rows[0].keys()),
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(metric_rows)
@@ -637,6 +645,7 @@ def main():
         writer = csv.DictWriter(
             handle,
             fieldnames=list(mcnemar_rows[0].keys()),
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(mcnemar_rows)
@@ -645,8 +654,9 @@ def main():
         "evaluation_version": "v6",
         "model": pred_meta["configured_model_id"],
         "reasoning_effort": pred_meta["reasoning_effort"],
-        "ground_truth_sha256": sha256(GT_CSV),
-        "predictions_sha256": sha256(PRED_CSV),
+        "hash_policy": "canonical_lf_text_v1",
+        "ground_truth_sha256": canonical_text_sha256(GT_CSV),
+        "predictions_sha256": canonical_text_sha256(PRED_CSV),
         "ground_truth_counts": dict(sorted(gt_counts.items())),
         "resolved_binary_cases": len(resolved_ids),
         "excluded_human_uncertain_cases": len(uncertain_gt_ids),
@@ -685,6 +695,7 @@ def main():
             ensure_ascii=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
     summary["output_sha256"] = {
@@ -700,6 +711,7 @@ def main():
             ensure_ascii=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
     compact = {
