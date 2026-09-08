@@ -34,6 +34,10 @@ def normalize(value):
     return "" if value is None else str(value)
 
 
+def normalize_immutable(value):
+    return normalize(value).replace("\r\n", "\n").replace("\r", "\n")
+
+
 def validate_annotator(annotator, source_rows, allow_pending):
     path = ANNOTATION_DIR / f"annotator_{annotator}_v6.csv"
     result = {
@@ -107,8 +111,8 @@ def validate_annotator(annotator, source_rows, allow_pending):
 
         if source_row is not None:
             for column in IMMUTABLE_COLUMNS:
-                expected = normalize(source_row.get(column))
-                found = normalize(row.get(column))
+                expected = normalize_immutable(source_row.get(column))
+                found = normalize_immutable(row.get(column))
 
                 if expected != found:
                     result["immutable_field_mismatches"].append(
@@ -196,6 +200,7 @@ def main():
 
     report = {
         "annotation_protocol_version": "v6",
+        "line_ending_normalization": "CRLF_and_CR_normalized_to_LF_for_immutable_comparison",
         "allow_pending": args.allow_pending,
         "annotators_checked": annotators,
         "all_valid": all(result["valid"] for result in results),
