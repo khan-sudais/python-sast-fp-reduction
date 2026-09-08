@@ -1,0 +1,107 @@
+{
+  "run_kind": "official",
+  "request_id": "LLM-V6-0805",
+  "request_index": 805,
+  "attempt": 1,
+  "started_at": "2026-09-08T21:43:35.783233+00:00",
+  "completed_at": "2026-09-08T21:43:55.064816+00:00",
+  "elapsed_seconds": 19.281504399958067,
+  "protocol_sha256": "31003a5871eb113036c71ca5ebac8a69d88b65e5ed349cc730ce3270ccf1a72d",
+  "manifest_sha256": "65ae1bc3cf49f8b996a452d2914a965615a9f1af33e42597380c3794f360688b",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "82cbc0b9-8404-9dd6-88cf-e732bbadd9d5",
+    "content-type": "application/json",
+    "date": "Tue, 08 Sep 2026 21:43:57 GMT"
+  },
+  "request_body": {
+    "model": "qwen3.8-27b",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "input": "Finding ID: FND-000172\nSecurity family: weak-hash\nCWE: CWE-327\nRepository file: paramiko/config.py\nTarget line: 446\nFlagged statement:\n        replacements = {\n            # TODO: %%???\n            # TODO: sha1 bad / this is offspec from rfc/openssh\n            \"%C\": sha1(tohash.encode()).hexdigest(),\n            \"%d\": homedir,\n            \"%h\": configured_hostname,\n            # TODO: %i?\n            \"%L\": local_hostname,\n            \"%l\": local_fqdn,\n            # also this is pseudo buggy when not in Match exec mode so document\n            # that. also WHY is that the case?? don't we do all of this late?\n            \"%n\": target_hostname,\n            \"%p\": port,\n            \"%r\": remoteuser,\n            # TODO: %T? don't believe this is possible however\n            \"%u\": user,\n            \"~\": homedir,\n        }\n\nContext variant: B_INTRA_PROCEDURAL_SLICE\nSupplied code context:\n 410:     def _tokenize(self, config, target_hostname, key, value):\n 428:         configured_hostname = target_hostname\n 429:         if key != \"hostname\":\n 430:             configured_hostname = config.get(\"hostname\", configured_hostname)\n 432:         if \"port\" in config:\n 435:             port = SSH_PORT\n 436:         user = getpass.getuser()\n 437:         if \"user\" in config:\n 440:             remoteuser = user\n 441:         local_hostname = socket.gethostname().split(\".\")[0]\n 442:         local_fqdn = LazyFqdn(config, local_hostname)\n 443:         homedir = os.path.expanduser(\"~\")\n 444:         tohash = local_hostname + target_hostname + repr(port) + remoteuser\n 446:         replacements = {\n 447:             # TODO: %%???\n 448:             # TODO: sha1 bad / this is offspec from rfc/openssh\n 449:             \"%C\": sha1(tohash.encode()).hexdigest(),\n 450:             \"%d\": homedir,\n 451:             \"%h\": configured_hostname,\n 452:             # TODO: %i?\n 453:             \"%L\": local_hostname,\n 454:             \"%l\": local_fqdn,\n 455:             # also this is pseudo buggy when not in Match exec mode so document\n 456:             # that. also WHY is that the case?? don't we do all of this late?\n 457:             \"%n\": target_hostname,\n 458:             \"%p\": port,\n 459:             \"%r\": remoteuser,\n 460:             # TODO: %T? don't believe this is possible however\n 461:             \"%u\": user,\n 462:             \"~\": homedir,\n 463:         }\n",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "max_output_tokens": 4096,
+    "tools": [],
+    "tool_choice": "none",
+    "stream": false
+  },
+  "response": {
+    "background": false,
+    "completed_at": 1788903836,
+    "created_at": 1788903818,
+    "frequency_penalty": 0.0,
+    "id": "resp_82cbc0b9-8404-9dd6-88cf-e732bbadd9d5",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "max_output_tokens": 4096,
+    "metadata": {},
+    "model": "qwen3.8-27b",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_e61dae38-865b-4d9a-af8e-5f4fb445e4b8",
+        "summary": [
+          {
+            "text": "The finding is about a weak hash (SHA1) being used at line 449 in paramiko/config.py. Let me analyze the context.\n\nThe code is in `_tokenize` method which handles SSH config file token replacement. The `%C` token is being replaced with a SHA1 hash of `tohash`, where `tohash = local_hostname + target_hostname + repr(port) + remoteuser`.\n\nLooking at the comments in the code:\n- Line 448: `# TODO: sha1 bad / this is offspec from rfc/openssh`\n\nThis is a well-known pattern in SSH client configuration. The `%C` token in OpenSSH's config file format is documented as a \"hash\" of the local hostname, remote host, and port. In OpenSSH, this is actually a CRC32 hash (not SHA1), and it's used purely as a deterministic token for filename generation (e.g., in `ControlPath`, `IdentityFile`, etc.) - it's NOT used for any cryptographic security purpose.\n\nThe key question is: Is this a TRUE_BUG (real security-relevant defect) or FALSE_POSITIVE?\n\nArguments for FALSE_POSITIVE:\n1. This is a config file token replacement, not a cryptographic operation for authentication or integrity.\n2. The `%C` token in OpenSSH is used for generating deterministic filenames (like socket paths for ControlMaster, identity file paths). It's not used for password hashing, digital signatures, or any security-critical operation.\n3. The OpenSSH spec actually uses CRC32 for this purpose, so SHA1 is \"offspec\" (as the TODO comment notes) but it's still just a hash for filename generation.\n4. The value is derived from non-sensitive data (hostname, port, username) - it's not hashing any secret.\n5. This is a well-known, intentional design pattern in SSH clients for generating deterministic but non-trivial tokens.\n6. The code even has a TODO acknowledging it's \"offspec\" from rfc/openssh, suggesting the developers are aware.\n\nArguments for TRUE_BUG:\n1. SHA1 is cryptographically broken for collision resistance.\n2. CWE-327 is about use of broken or risky cryptographic algorithms.\n\nHowever, the context here is clear: this is NOT a cryptographic security operation. It's a deterministic token for config file expansion. The hash is used to generate a consistent string for filename/path purposes. The inputs are non-sensitive (hostname, port, username). Even if someone could find a SHA1 collision, the worst case would be two different SSH connections mapping to the same token, which is a functional issue, not a security vulnerability.\n\nThe comment on line 448 says \"sha1 bad / this is offspec from rfc/openssh\" - acknowledging the issue but in the context of spec compliance, not security.\n\nThis is a FALSE_POSITIVE because:\n1. The SHA1 is not used for any security-critical purpose (no authentication, no integrity protection, no password storage).\n2. It's a config token for deterministic path/filename generation.\n3. The inputs are non-sensitive data.\n4. This mirrors (though deviates from) OpenSSH's own design where a similar non-cryptographic hash is used for the same purpose.\n\nI'll classify this as FALSE_POSITIVE.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "annotations": [],
+            "text": "{\"label\":\"FALSE_POSITIVE\",\"rationale\":\"The SHA1 at line 449 is used solely to produce the %C config-token, a deterministic short identifier for filename/path expansion in SSH config files (e.g. ControlPath, IdentityFile). The inputs (local hostname, target hostname, port, remote user) are non-sensitive, and the resulting hex string is never used for authentication, integrity protection, or secret storage. OpenSSH itself defines %C as a non-cryptographic CRC32-style hash for the same purpose; the TODO on line 448 notes the deviation is 'offspec from rfc/openssh,' confirming the intent is a stable token, not a security mechanism. A collision would at most cause two connections to map to the same path token—a functional, not security, issue.\",\"evidence\":[\"line 444: tohash = local_hostname + target_hostname + repr(port) + remoteuser (non-sensitive inputs)\",\"line 448: TODO comment 'sha1 bad / this is offspec from rfc/openssh' indicates awareness and spec-deviation context\",\"line 449: sha1(tohash.encode()).hexdigest() used only to fill the %C replacement token\",\"line 446-463: replacements dict is for SSH config file token expansion, not cryptographic operations\",\"line 410: method _tokenize handles config string substitution\"]}",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_d3af341a-b959-41db-bf78-7dc6f3793c95",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "tool_choice": "none",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "usage": {
+      "input_tokens": 923,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 1003,
+      "output_tokens_details": {
+        "reasoning_tokens": 707
+      },
+      "total_tokens": 1926,
+      "x_details": [
+        {
+          "input_tokens": 923,
+          "input_tokens_details": {
+            "text_tokens": 923
+          },
+          "output_tokens": 1003,
+          "output_tokens_details": {
+            "reasoning_tokens": 707
+          },
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 1926,
+          "x_billing_type": "response_api"
+        }
+      ]
+    }
+  }
+}

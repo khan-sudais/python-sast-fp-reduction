@@ -1,0 +1,107 @@
+{
+  "run_kind": "official",
+  "request_id": "LLM-V6-0320",
+  "request_index": 320,
+  "attempt": 1,
+  "started_at": "2026-09-08T18:27:49.533359+00:00",
+  "completed_at": "2026-09-08T18:28:26.197531+00:00",
+  "elapsed_seconds": 36.66412400000263,
+  "protocol_sha256": "31003a5871eb113036c71ca5ebac8a69d88b65e5ed349cc730ce3270ccf1a72d",
+  "manifest_sha256": "65ae1bc3cf49f8b996a452d2914a965615a9f1af33e42597380c3794f360688b",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "5a3ac3d9-8e19-9e4c-b0bb-02fda85ec86c",
+    "content-type": "application/json",
+    "date": "Tue, 08 Sep 2026 18:28:28 GMT"
+  },
+  "request_body": {
+    "model": "qwen3.8-27b",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "input": "Finding ID: FND-000167\nSecurity family: weak-hash\nCWE: CWE-327\nRepository file: cherrypy/lib/auth_digest.py\nTarget line: 38\nFlagged statement:\n    return md5(ntob(s, 'utf-8')).hexdigest()\n\nContext variant: C_SAME_FILE_CALLER_EXPANSION\nSupplied code context:\n=== Target ===\nFunction: md5_hex\nLine: 38\nScope: same file only\n=== Target slice ===\n  36: def md5_hex(s):\n  38:     return md5(ntob(s, 'utf-8')).hexdigest()\n\n=== Caller depth 1: get_ha1_dict_plain -> md5_hex (line 73) ===\n  70:     def get_ha1(realm, username):\n  71:         password = user_password_dict.get(username)\n  72:         if password:\n  73:             return md5_hex('%s:%s:%s' % (username, realm, password))\n\n=== Caller depth 1: synthesize_nonce -> md5_hex (line 144) ===\n 125: def synthesize_nonce(s, key, timestamp=None):\n 142:     if timestamp is None:\n 143:         timestamp = int(time.time())\n 144:     h = md5_hex('%s:%s:%s' % (timestamp, s, key))\n\n=== Caller depth 1: H -> md5_hex (line 151) ===\n 149: def H(s):\n 151:     return md5_hex(s)\n\n=== Caller depth 1: get_ha1 -> md5_hex (line 73) ===\n  70:     def get_ha1(realm, username):\n  71:         password = user_password_dict.get(username)\n  72:         if password:\n  73:             return md5_hex('%s:%s:%s' % (username, realm, password))\n\n=== Caller depth 2: www_authenticate -> synthesize_nonce (line 404) ===\n 384: def www_authenticate(\n 385:     realm,\n 386:     key,\n 387:     algorithm='MD5',\n 388:     nonce=None,\n 389:     qop=qop_auth,\n 390:     stale=False,\n 391:     accept_charset=DEFAULT_CHARSET[:],\n 392: ):\n 403:     if nonce is None:\n 404:         nonce = synthesize_nonce(realm, key)\n\n=== Caller depth 2: validate_nonce -> synthesize_nonce (line 281) ===\n 263:     def validate_nonce(self, s, key):\n 279:         try:\n 280:             timestamp, hashpart = self.nonce.split(':', 1)\n 281:             s_timestamp, s_hashpart = synthesize_nonce(\n 282:                 s,\n 283:                 key,\n 284:                 timestamp,\n 285:             ).split(':', 1)\n\n=== Caller depth 2: HA2 -> H (line 331) ===\n 311:     def HA2(self, entity_body=''):\n 323:         if self.qop is None or self.qop == 'auth':\n 325:         elif self.qop == 'auth-int':\n 326:             a2 = '%s:%s:%s' % (self.http_method, self.uri, H(entity_body))\n 331:         return H(a2)\n\n=== Caller depth 2: HA2 -> H (line 326) ===\n 311:     def HA2(self, entity_body=''):\n 323:         if self.qop is None or self.qop == 'auth':\n 325:         elif self.qop == 'auth-int':\n 326:             a2 = '%s:%s:%s' % (self.http_method, self.uri, H(entity_body))\n\n=== Caller depth 2: request_digest -> H (line 374) ===\n 333:     def request_digest(self, ha1, entity_body=''):\n 347:         ha2 = self.HA2(entity_body)\n 349:         if self.qop:\n 358:             req = '%s:%s' % (self.nonce, ha2)\n 371:         if self.algorithm == 'MD5-sess':\n 372:             ha1 = H('%s:%s:%s' % (ha1, self.nonce, self.cnonce))\n 374:         digest = H('%s:%s' % (ha1, req))\n\n=== Caller depth 2: request_digest -> H (line 372) ===\n 333:     def request_digest(self, ha1, entity_body=''):\n 371:         if self.algorithm == 'MD5-sess':\n 372:             ha1 = H('%s:%s:%s' % (ha1, self.nonce, self.cnonce))\n\n=== Caller depth 2: digest_auth -> get_ha1 (line 478) ===\n 420: def digest_auth(realm, get_ha1, key, debug=False, accept_charset='utf-8'):\n 448:     request = cherrypy.serving.request\n 450:     auth_header = request.headers.get('authorization')\n 463:     msg = 'The Authorization header could not be parsed.'\n 464:     with cherrypy.HTTPError.handle(ValueError, 400, msg):\n 465:         auth = HttpDigestAuthorization(\n 466:             auth_header,\n 467:             request.method,\n 468:             debug=debug,\n 469:             accept_charset=accept_charset,\n 470:         )\n 478:     ha1 = get_ha1(realm, auth.username)\n\n=== Caller depth 3: _respond_401 -> www_authenticate (line 506) ===\n 504: def _respond_401(realm, key, accept_charset, debug, **kwargs):\n 506:     header = www_authenticate(\n 507:         realm,\n 508:         key,\n 509:         accept_charset=accept_charset,\n 510:         **kwargs,\n 511:     )\n\n=== Caller depth 3: digest_auth -> validate_nonce (line 475) ===\n 420: def digest_auth(realm, get_ha1, key, debug=False, accept_charset='utf-8'):\n 448:     request = cherrypy.serving.request\n 450:     auth_header = request.headers.get('authorization')\n 452:     respond_401 = functools.partial(\n 453:         _respond_401,\n 454:         realm,\n 455:         key,\n 456:         accept_charset,\n 457:         debug,\n 458:     )\n 463:     msg = 'The Authorization header could not be parsed.'\n 464:     with cherrypy.HTTPError.handle(ValueError, 400, msg):\n 465:         auth = HttpDigestAuthorization(\n 466:             auth_header,\n 467:             request.method,\n 468:             debug=debug,\n 469:             accept_charset=accept_charset,\n 470:         )\n 475:     if not auth.validate_nonce(realm, key):\n 476:         respond_401()\n\n=== Caller depth 3: request_digest -> HA2 (line 347) ===\n 333:     def request_digest(self, ha1, entity_body=''):\n 347:         ha2 = self.HA2(entity_body)\n\n=== Caller depth 3: digest_auth -> request_digest (line 486) ===\n 420: def digest_auth(realm, get_ha1, key, debug=False, accept_charset='utf-8'):\n 448:     request = cherrypy.serving.request\n 450:     auth_header = request.headers.get('authorization')\n 463:     msg = 'The Authorization header could not be parsed.'\n 464:     with cherrypy.HTTPError.handle(ValueError, 400, msg):\n 465:         auth = HttpDigestAuthorization(\n 466:             auth_header,\n 467:             request.method,\n 468:             debug=debug,\n 469:             accept_charset=accept_charset,\n 470:         )\n 478:     ha1 = get_ha1(realm, auth.username)\n 486:     digest = auth.request_digest(ha1, entity_body=request.body)\n",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "max_output_tokens": 4096,
+    "tools": [],
+    "tool_choice": "none",
+    "stream": false
+  },
+  "response": {
+    "background": false,
+    "completed_at": 1788892106,
+    "created_at": 1788892071,
+    "frequency_penalty": 0.0,
+    "id": "resp_5a3ac3d9-8e19-9e4c-b0bb-02fda85ec86c",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "max_output_tokens": 4096,
+    "metadata": {},
+    "model": "qwen3.8-27b",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_278672d6-439d-4ea8-9a3f-137182aca7c9",
+        "summary": [
+          {
+            "text": "Let me analyze this finding carefully.\n\nThe finding is about CWE-327 (Use of a Broken or Risky Cryptographic Algorithm) in the file `cherrypy/lib/auth_digest.py` at line 38, which uses MD5.\n\nThe flagged code:\n```python\ndef md5_hex(s):\n    return md5(ntob(s, 'utf-8')).hexdigest()\n```\n\nNow, the key question is: Is this a TRUE_BUG (real security issue) or FALSE_POSITIVE (benign/constrained)?\n\nLet me look at the context:\n\n1. This is an HTTP Digest Authentication implementation. The MD5 usage here is specifically for the HTTP Digest Auth protocol as defined in RFC 2617. The Digest Auth protocol was originally designed around MD5 hashing.\n\n2. Looking at the callers:\n   - `get_ha1`: Computes HA1 = MD5(username:realm:password) - this is the standard Digest Auth HA1 computation\n   - `synthesize_nonce`: Creates nonces using MD5 - part of the Digest Auth nonce generation\n   - `H`: Generic hash function used throughout Digest Auth\n   - `HA2`: Computes HA2 = MD5(method:uri) - standard Digest Auth\n   - `request_digest`: Computes the final digest response\n   - `www_authenticate`: Sets up the authentication challenge with algorithm='MD5' as default\n\n3. The `www_authenticate` function at line 387 has `algorithm='MD5'` as the default parameter. This indicates that the protocol being implemented is specifically MD5-based Digest Auth.\n\n4. In RFC 2617, the HTTP Digest Authentication scheme was designed with MD5 as the hash algorithm. While MD5 is considered broken for cryptographic purposes (collision resistance), its use in the Digest Auth protocol is a protocol-level design decision. The MD5 here is used as a one-way hash for generating authentication tokens, not for collision resistance or digital signatures.\n\nHowever, there are security considerations:\n- MD5 is indeed considered a weak hash algorithm\n- The `get_ha1` function at line 73 directly hashes a password with MD5: `md5_hex('%s:%s:%s' % (username, realm, password))` - this means the password is stored/computed in a way that uses MD5, which is vulnerable to rainbow table attacks\n- The nonce generation also uses MD5\n\nBut the critical question is: Is this a real security bug in the context of how this code is used?\n\nArguments for FALSE_POSITIVE:\n- This is implementing the HTTP Digest Auth protocol (RFC 2617), which is inherently designed around MD5\n- The MD5 usage is a protocol requirement, not an arbitrary choice\n- The algorithm is explicitly set to 'MD5' in the protocol exchange\n- This is a well-known, documented protocol limitation, not a coding error\n- The code is implementing a standard protocol specification\n\nArguments for TRUE_BUG:\n- MD5 is cryptographically broken\n- Using MD5 to hash passwords (line 73) is a weak password storage mechanism\n- The nonce generation with MD5 could potentially be attacked\n- Modern security guidelines recommend against MD5 entirely\n- Even in the context of Digest Auth, SHA-256 variants exist (RFC 7616)\n\nThe key consideration: This is a protocol implementation. The MD5 usage is inherent to the HTTP Digest Auth protocol as specified in RFC 2617. The code is faithfully implementing the protocol. The `algorithm='MD5'` parameter in `www_authenticate` makes it clear this is the MD5 variant of Digest Auth.\n\nHowever, CWE-327 specifically flags the use of broken/risky cryptographic algorithms. Even in protocol implementations, using MD5 where SHA-256 alternatives exist (RFC 7616) is a valid security concern. The password hashing at line 73 is particularly concerning because it directly weakens credential storage.\n\nBut wait - I need to be careful. In the Digest Auth protocol, the password is NOT stored as an MD5 hash. The `get_ha1` function computes the hash on-the-fly from the plaintext password. The actual password storage is up to the application. The MD5 here is part of the protocol's challenge-response mechanism, not password storage per se.\n\nActually, looking more carefully at line 71-73:\n```python\npassword = user_password_dict.get(username)\nif password:\n    return md5_hex('%s:%s:%s' % (username, realm, password))\n```\n\nThis is computing HA1 for the Digest Auth protocol. The password here is the actual password (or could be a pre-stored HA1 hash, depending on how `get_ha1` is passed by the caller). The MD5 computation is part of the protocol.\n\nGiven that this is a protocol implementation (HTTP Digest Auth per RFC 2617), and the MD5 usage is a protocol-level design decision rather than an arbitrary choice by the developer, I would lean toward this being more of a known limitation of the protocol rather than a \"bug\" in the code.\n\nHowever, CWE-327 is about using broken algorithms regardless of context. The fact that it's a protocol doesn't make MD5 safe - it's still a weak algorithm. The vulnerability is real in the sense that an attacker could potentially exploit MD5 weaknesses in the Digest Auth context (e.g., precomputation attacks on weak passwords).\n\nI think this is a TRUE_BUG because:\n1. MD5 is cryptographically broken (CWE-327)\n2. The code uses MD5 for security-relevant computations (authentication)\n3. Even in the Digest Auth context, this creates a real (if limited) security risk\n4. Modern alternatives exist (SHA-256 based Digest Auth per RFC 7616)\n5. The password is being processed through a broken hash\n\nActually, let me reconsider. The finding is specifically about the `md5_hex` function. In the context of HTTP Digest Auth:\n- The protocol is explicitly MD5-based\n- The `algorithm` field in the Authorization header will be \"MD5\"\n- Clients and servers negotiate this\n- This is a well-understood, documented protocol limitation\n\nIn security scanning, protocol implementations that use MD5 as specified by the protocol are often flagged but are considered \"by design\" rather than bugs. The code isn't choosing MD5 arbitrarily - it's implementing a specific protocol version.\n\nBut the CWE-327 classification is still valid - MD5 IS a broken algorithm, and using it in an authentication context IS a security concern, even if it's what the protocol specifies.\n\nI'll classify this as TRUE_BUG because:\n1. The code genuinely uses a broken cryptographic algorithm (MD5)\n2. It's used in a security-critical context (authentication)\n3. The `get_ha1` function processes passwords through MD5\n4. There are no mitigations visible in the code (no salt, no iteration)\n5. The finding is correctly identified - this IS a weak hash being used\n\nWait, but I should consider whether this is \"adequately constrained.\" The protocol itself constrains the algorithm to MD5. The code is implementing a specific protocol version. In many security review contexts, protocol-mandated algorithms are acknowledged but not treated as bugs in the implementation.\n\nI'll go with TRUE_BUG. The use of MD5 in an authentication context is a genuine security concern (CWE-327), and the code does use it without any mitigation. The fact that it's part of a protocol doesn't eliminate the vulnerability - it just means the fix would require implementing a newer protocol version (RFC 7616 with SHA-256) or adding additional safeguards.\n",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "annotations": [],
+            "text": "{\"label\":\"TRUE_BUG\",\"rationale\":\"The md5_hex function at line 38 uses MD5, a cryptographically broken hash (CWE-327), in a security-critical authentication context. While this implements the HTTP Digest Auth protocol (RFC 2617) which was originally designed around MD5, the code provides no mitigation: passwords are fed directly into MD5 in get_ha1 (line 73), nonces are generated via MD5 (line 144), and the default algorithm is hardcoded to 'MD5' (line 387). No salt, key stretching, or upgrade path to SHA-256 (RFC 7616) is visible. The use of a broken hash in credential verification and nonce generation constitutes a genuine weak-hash vulnerability.\",\"evidence\":[\"Line 38: return md5(ntob(s, 'utf-8')).hexdigest()\",\"Line 73: return md5_hex('%s:%s:%s' % (username, realm, password))\",\"Line 144: h = md5_hex('%s:%s:%s' % (timestamp, s, key))\",\"Line 387: algorithm='MD5' (default parameter)\",\"Line 331: return H(a2) — H delegates to md5_hex at line 151\",\"Line 374: digest = H('%s:%s' % (ha1, req))\"]}",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_1829ce5c-93b1-4d68-b341-7b9e9c1d489c",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "tool_choice": "none",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "usage": {
+      "input_tokens": 2292,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 1971,
+      "output_tokens_details": {
+        "reasoning_tokens": 1661
+      },
+      "total_tokens": 4263,
+      "x_details": [
+        {
+          "input_tokens": 2292,
+          "input_tokens_details": {
+            "text_tokens": 2292
+          },
+          "output_tokens": 1971,
+          "output_tokens_details": {
+            "reasoning_tokens": 1661
+          },
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 4263,
+          "x_billing_type": "response_api"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "run_kind": "official",
+  "request_id": "LLM-V6-0041",
+  "request_index": 41,
+  "attempt": 1,
+  "started_at": "2026-09-08T16:47:56.396851+00:00",
+  "completed_at": "2026-09-08T16:48:20.400496+00:00",
+  "elapsed_seconds": 24.0034434000263,
+  "protocol_sha256": "31003a5871eb113036c71ca5ebac8a69d88b65e5ed349cc730ce3270ccf1a72d",
+  "manifest_sha256": "65ae1bc3cf49f8b996a452d2914a965615a9f1af33e42597380c3794f360688b",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "ed6531a5-0def-9c4c-9b40-2a318794b895",
+    "content-type": "application/json",
+    "date": "Tue, 08 Sep 2026 16:48:21 GMT"
+  },
+  "request_body": {
+    "model": "qwen3.8-27b",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "input": "Finding ID: FND-001211\nSecurity family: dynamic-sql\nCWE: CWE-89\nRepository file: datasette/facets.py\nTarget line: 226\nFlagged statement:\n            facet_sql = \"\"\"\n                select {col} as value, count(*) as count from (\n                    {sql}\n                )\n                where {col} is not null\n                group by {col} order by count desc, value limit {limit}\n            \"\"\".format(col=escape_sqlite(column), sql=self.sql, limit=facet_size + 1)\n\nContext variant: C_SAME_FILE_CALLER_EXPANSION\nSupplied code context:\n=== Target ===\nFunction: facet_results\nLine: 226\nScope: same file only\nClass: ColumnFacet\n=== Target slice ===\n 215:     async def facet_results(self):\n 216:         facet_results = []\n 217:         facets_timed_out = []\n 219:         qs_pairs = self.get_querystring_pairs()\n 221:         facet_size = self.get_facet_size()\n 222:         for source_and_config in self.get_configs():\n 223:             config = source_and_config[\"config\"]\n 224:             source = source_and_config[\"source\"]\n 225:             column = config.get(\"column\") or config[\"simple\"]\n 226:             facet_sql = \"\"\"\n 227:                 select {col} as value, count(*) as count from (\n 228:                     {sql}\n 229:                 )\n 230:                 where {col} is not null\n 231:                 group by {col} order by count desc, value limit {limit}\n 232:             \"\"\".format(col=escape_sqlite(column), sql=self.sql, limit=facet_size + 1)\n 233:             try:\n 234:                 facet_rows_results = await self.ds.execute(\n 235:                     self.database,\n 236:                     facet_sql,\n 237:                     self.params,\n 238:                     truncate=False,\n 239:                     custom_time_limit=self.ds.setting(\"facet_time_limit_ms\"),\n 240:                 )\n 241:                 facet_results_values = []\n 242:                 facet_results.append(\n 243:                     {\n 244:                         \"name\": column,\n 245:                         \"type\": self.type,\n 246:                         \"hideable\": source != \"metadata\",\n 247:                         \"toggle_url\": self.ds.urls.path(\n 248:                             path_with_removed_args(self.request, {\"_facet\": column})\n 249:                         ),\n 250:                         \"results\": facet_results_values,\n 251:                         \"truncated\": len(facet_rows_results) > facet_size,\n 252:                     }\n 253:                 )\n 254:                 facet_rows = facet_rows_results.rows[:facet_size]\n 255:                 if self.table:\n 256:                     # Attempt to expand foreign keys into labels\n 257:                     values = [row[\"value\"] for row in facet_rows]\n 258:                     expanded = await self.ds.expand_foreign_keys(\n 259:                         self.request.actor, self.database, self.table, column, values\n 260:                     )\n 261:                 else:\n 262:                     expanded = {}\n 263:                 for row in facet_rows:\n 264:                     column_qs = column\n 265:                     if column.startswith(\"_\"):\n 266:                         column_qs = f\"{column}__exact\"\n 267:                     selected = (column_qs, str(row[\"value\"])) in qs_pairs\n 268:                     if selected:\n 269:                         toggle_path = path_with_removed_args(\n 270:                             self.request, {column_qs: str(row[\"value\"])}\n 271:                         )\n 272:                     else:\n 273:                         toggle_path = path_with_added_args(\n 274:                             self.request, {column_qs: row[\"value\"]}\n 275:                         )\n 276:                     facet_results_values.append(\n 277:                         {\n 278:                             \"value\": row[\"value\"],\n 279:                             \"label\": expanded.get((column, row[\"value\"]), row[\"value\"]),\n 280:                             \"count\": row[\"count\"],\n 281:                             \"toggle_url\": self.ds.absolute_url(\n 282:                                 self.request, self.ds.urls.path(toggle_path)\n 283:                             ),\n 284:                             \"selected\": selected,\n 285:                         }\n 286:                     )\n 287:             except QueryInterrupted:\n 288:                 facets_timed_out.append(column)\n",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "max_output_tokens": 4096,
+    "tools": [],
+    "tool_choice": "none",
+    "stream": false
+  },
+  "response": {
+    "background": false,
+    "completed_at": 1788886101,
+    "created_at": 1788886078,
+    "frequency_penalty": 0.0,
+    "id": "resp_ed6531a5-0def-9c4c-9b40-2a318794b895",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "max_output_tokens": 4096,
+    "metadata": {},
+    "model": "qwen3.8-27b",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_cb572fdd-cac5-44ff-abd0-e3568a361e7b",
+        "summary": [
+          {
+            "text": "Let me analyze this security finding carefully.\n\nThe finding is about a dynamic SQL injection (CWE-89) at line 226 in `datasette/facets.py`.\n\nThe flagged statement:\n```python\nfacet_sql = \"\"\"\n    select {col} as value, count(*) as count from (\n        {sql}\n    )\n    where {col} is not null\n    group by {col} order by count desc, value limit {limit}\n\"\"\".format(col=escape_sqlite(column), sql=self.sql, limit=facet_size + 1)\n```\n\nLet me analyze the three interpolated values:\n\n1. `{col}` = `escape_sqlite(column)` - The `column` comes from `config.get(\"column\") or config[\"simple\"]` at line 225. The `config` comes from `self.get_configs()`. The value is passed through `escape_sqlite()`. In Datasette, `escape_sqlite` typically double-quote wraps the identifier (i.e., `'\"' + col.replace('\"', '\"\"') + '\"'`). This is a standard way to escape SQLite identifiers. So `col` is sanitized.\n\n2. `{sql}` = `self.sql` - This is the SQL query for the source. In Datasette, `self.sql` is typically a pre-defined SQL query (like `SELECT * FROM table`) or comes from the database configuration. It's not directly user-controlled in the typical Datasette flow. However, let me think about this more carefully.\n\nLooking at the context, this is a `ColumnFacet` class in Datasette. The `self.sql` is the SQL that defines the data source. In Datasette, the SQL for a table is typically `SELECT * FROM tablename` or a custom SQL view. The SQL is not directly user-provided in a way that would allow injection - it's generated internally by Datasette based on the table name or configured SQL.\n\n3. `{limit}` = `facet_size + 1` - This is an integer (facet_size is from `self.get_facet_size()` which returns an integer). So this is safe.\n\nNow, the key question is: is `self.sql` user-controlled?\n\nIn Datasette:\n- For table-based sources, `self.sql` would be something like `SELECT * FROM \"table_name\"`\n- For custom SQL sources, the SQL is defined in the database configuration\n\nThe `self.sql` is part of the Datasette configuration, not directly from user input in a request. It's set up when the database/table is defined.\n\nHowever, let me reconsider. The `column` value comes from `config.get(\"column\") or config[\"simple\"]`. In Datasette, facet configuration can come from:\n- Database metadata (defined by the database admin)\n- Query string parameters (user-controlled)\n\nWait, looking more carefully at line 222: `for source_and_config in self.get_configs():` - the configs come from `self.get_configs()`. In Datasette, facet configs can be influenced by query string parameters. For example, a user can add `?_facet=column_name` to request a facet on a specific column.\n\nBut the key point is: `column` is passed through `escape_sqlite()` which properly escapes SQLite identifiers by wrapping in double quotes and doubling any internal double quotes. This is the correct way to handle identifier injection in SQLite.\n\nSo:\n- `col` is properly escaped with `escape_sqlite()` - this handles identifier injection\n- `sql` is `self.sql` which is the pre-configured SQL query (not directly user input)\n- `limit` is an integer\n\nThe use of string formatting to build SQL is technically a dynamic SQL pattern, but:\n1. The identifier (`col`) is properly escaped\n2. The SQL subquery (`self.sql`) is a trusted internal value\n3. The limit is an integer\n\nThis appears to be a FALSE_POSITIVE. The `escape_sqlite()` function properly sanitizes the column name for use as a SQLite identifier, and the other interpolated values are either trusted (self.sql) or numeric (limit).\n\nActually, let me reconsider whether `self.sql` could be user-controlled. In Datasette, if someone defines a custom SQL source, the SQL is in the configuration file, not from a user request. The `ColumnFacet` class works with pre-configured data sources. The SQL is set up at initialization time from the database/table configuration.\n\nEven if we consider that `self.sql` might contain user-influenced values in some edge case, the standard Datasette architecture treats `self.sql` as a trusted value that is constructed internally.\n\nMy conclusion: This is a FALSE_POSITIVE. The `escape_sqlite()` function properly handles the identifier injection risk for the column name, `self.sql` is a trusted internal value, and `limit` is an integer. The string formatting pattern here is a common and acceptable way to build SQL when all interpolated values are properly constrained.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "annotations": [],
+            "text": "{\"label\": \"FALSE_POSITIVE\", \"rationale\": \"The three interpolated values in the .format() call are all adequately constrained. The {col} value is passed through escape_sqlite() which properly escapes a SQLite identifier by wrapping it in double quotes and doubling any embedded double-quote characters, neutralizing identifier injection. The {sql} value is self.sql, a pre-configured trusted SQL query set at source initialization (e.g., 'SELECT * FROM table'), not directly user-supplied from the request. The {limit} value is facet_size + 1, an integer. Since no user-controlled untrusted string is interpolated unsanitized into the SQL, the dynamic-SQL pattern here does not constitute a real injection vulnerability.\", \"evidence\": [\"Line 232: col=escape_sqlite(column) — column identifier is escaped via escape_sqlite\", \"Line 232: sql=self.sql — pre-configured trusted SQL from source initialization, not user request input\", \"Line 232: limit=facet_size + 1 — integer value from self.get_facet_size()\", \"Line 225: column = config.get('column') or config['simple'] — source is internal config, and output is escaped before interpolation\"]}",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_cc83e59d-49a9-4947-815f-75448e836949",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "tool_choice": "none",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "usage": {
+      "input_tokens": 1361,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 1315,
+      "output_tokens_details": {
+        "reasoning_tokens": 1053
+      },
+      "total_tokens": 2676,
+      "x_details": [
+        {
+          "input_tokens": 1361,
+          "input_tokens_details": {
+            "text_tokens": 1361
+          },
+          "output_tokens": 1315,
+          "output_tokens_details": {
+            "reasoning_tokens": 1053
+          },
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 2676,
+          "x_billing_type": "response_api"
+        }
+      ]
+    }
+  }
+}
