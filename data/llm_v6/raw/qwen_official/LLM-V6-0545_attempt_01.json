@@ -1,0 +1,107 @@
+{
+  "run_kind": "official",
+  "request_id": "LLM-V6-0545",
+  "request_index": 545,
+  "attempt": 1,
+  "started_at": "2026-09-08T19:42:06.304647+00:00",
+  "completed_at": "2026-09-08T19:42:42.852005+00:00",
+  "elapsed_seconds": 36.54728509997949,
+  "protocol_sha256": "31003a5871eb113036c71ca5ebac8a69d88b65e5ed349cc730ce3270ccf1a72d",
+  "manifest_sha256": "65ae1bc3cf49f8b996a452d2914a965615a9f1af33e42597380c3794f360688b",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "06f5f9bd-03a4-9df3-a907-ae3438d2b1f1",
+    "content-type": "application/json",
+    "date": "Tue, 08 Sep 2026 19:42:44 GMT"
+  },
+  "request_body": {
+    "model": "qwen3.8-27b",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "input": "Finding ID: FND-000266\nSecurity family: weak-hash\nCWE: CWE-327\nRepository file: httpx/_auth.py\nTarget line: 309\nFlagged statement:\n        return hashlib.sha1(s).hexdigest()[:16].encode()\n\nContext variant: A_ISOLATED_DIFF\nSupplied code context:\n        s += time.ctime().encode()\n        s += os.urandom(8)\n\n        return hashlib.sha1(s).hexdigest()[:16].encode()\n\n    def _get_header_value(self, header_fields: dict[str, bytes]) -> str:\n        NON_QUOTED_FIELDS = (\"algorithm\", \"qop\", \"nc\")\n",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "max_output_tokens": 4096,
+    "tools": [],
+    "tool_choice": "none",
+    "stream": false
+  },
+  "response": {
+    "background": false,
+    "completed_at": 1788896562,
+    "created_at": 1788896528,
+    "frequency_penalty": 0.0,
+    "id": "resp_06f5f9bd-03a4-9df3-a907-ae3438d2b1f1",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "max_output_tokens": 4096,
+    "metadata": {},
+    "model": "qwen3.8-27b",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_a53508b4-3726-4456-8544-284d47ebbf77",
+        "summary": [
+          {
+            "text": "The finding is about the use of SHA-1 (weak hash algorithm) at line 309 in `httpx/_auth.py`.\n\nLet me analyze the context:\n\n```python\ns += time.ctime().encode()\ns += os.urandom(8)\n\nreturn hashlib.sha1(s).hexdigest()[:16].encode()\n```\n\nThe key question is: what is this hash being used for?\n\nLooking at the context:\n1. The function constructs a string `s` by appending `time.ctime().encode()` and `os.urandom(8)` to it.\n2. Then it hashes `s` with SHA-1, takes the first 16 hex characters, and returns it as bytes.\n\nThe method is called `_get_header_value` which is related to HTTP authentication headers (Digest authentication, given the \"algorithm\", \"qop\", \"nc\" fields mentioned).\n\nIn HTTP Digest Authentication (RFC 2617/7616), the `nonce` value is a server-generated value used to prevent replay attacks. The nonce is typically generated using a hash of some data. \n\nLooking at this more carefully:\n- The nonce is constructed from `time.ctime()` and `os.urandom(8)` - so it has 8 bytes of randomness from the OS.\n- The SHA-1 is used to create a fixed-length digest from this variable-length input.\n- Only 16 hex characters (8 bytes) of the SHA-1 output are used.\n\nThe question is whether this constitutes a \"weak hash\" vulnerability.\n\nSHA-1 is indeed considered weak for cryptographic purposes (collision resistance is broken). However, the context matters:\n\n1. **Is this being used for security-critical purposes like password hashing or digital signatures?** No - it's generating a nonce for HTTP Digest authentication.\n\n2. **Is the security of the nonce dependent on SHA-1's collision resistance?** Not really. The nonce's security comes from the `os.urandom(8)` component (8 bytes = 64 bits of randomness) and the time component. The SHA-1 is just being used as a one-way function to create a fixed-length token from the random/time data. It's not being used in a way where collision resistance or preimage resistance of SHA-1 is the primary security property.\n\n3. **Is SHA-1 appropriate here?** In the context of generating a nonce for HTTP Digest Auth, the hash is just being used to create a deterministic fixed-length representation. The actual entropy comes from `os.urandom(8)`. SHA-1 is being used as a simple hash-to-fixture-length operation, not for security-critical cryptographic operations.\n\nHowever, from a strict CWE-327 perspective, using SHA-1 is generally flagged as a weak hash. But the context here suggests it's being used in a non-critical way - as a nonce generator where the entropy comes from `os.urandom(8)`.\n\nActually, let me reconsider. The nonce in Digest Auth is important - it should be unpredictable and unique. The use of SHA-1 here is:\n- Input: some string `s` (which includes `time.ctime()` and `os.urandom(8)`)\n- Output: first 16 hex chars of SHA-1 hash (8 bytes)\n\nThe security concern would be:\n- Is 8 bytes of output sufficient? That's 64 bits, which is generally acceptable for a nonce.\n- Is SHA-1 the right choice? For a nonce, you don't really need collision resistance. You need the output to be unpredictable (which comes from the `os.urandom(8)` input) and unique (which comes from the time component).\n\nThis is a borderline case. The SHA-1 is not being used for:\n- Password hashing\n- Digital signatures\n- HMAC (well, it could be, but that's not what's shown)\n- Certificate verification\n\nIt's being used as a simple one-way function to create a fixed-length nonce. The entropy source is `os.urandom(8)`, not the hash function itself.\n\nHowever, from a strict security auditing perspective, CWE-327 flags any use of SHA-1 in a security context. The HTTP Digest Auth nonce IS a security-relevant value. Using a broken hash algorithm, even if the practical risk is low, is still a valid finding from a standards/compliance perspective.\n\nBut looking more carefully at the practical risk:\n- The nonce's unpredictability comes from `os.urandom(8)` (64 bits of entropy)\n- SHA-1 is being used as a simple one-way function, not for collision resistance\n- Even if SHA-1 has collision issues, finding a collision in the specific input format used here doesn't help an attacker\n- The preimage resistance of SHA-1 is still intact (no practical preimage attacks)\n\nI think this is a FALSE_POSITIVE in the practical sense because:\n1. The security of the nonce doesn't depend on SHA-1's collision resistance\n2. The entropy comes from `os.urandom(8)`\n3. SHA-1 is being used as a simple digest/one-way function to normalize length\n4. There's no practical attack vector that exploits SHA-1's weaknesses in this specific use case\n\nHowever, I could also argue it's a TRUE_BUG because:\n- CWE-327 is about using broken/insecure cryptographic algorithms\n- In a security-sensitive context (auth nonce), using a deprecated hash is still a concern\n- Future-proofing and best practices suggest using SHA-256\n\nLet me think about this more carefully. The nonce in HTTP Digest Auth is meant to be unpredictable to prevent replay attacks. The value is:\n- `time.ctime()` - predictable\n- `os.urandom(8)` - 64 bits of randomness\n- Hashed with SHA-1, truncated to 8 bytes\n\nThe hash here is purely for:\n1. Creating a fixed-length output\n2. Mixing the time and random components\n\nSHA-1's weaknesses (collision attacks) don't apply here because:\n- You can't craft two different inputs that produce the same 16-hex-char output in a way that helps you (you'd need to control the input, which includes server-side `os.urandom(8)`)\n- Preimage attacks aren't practical against SHA-1\n\nI'll classify this as FALSE_POSITIVE because the SHA-1 usage here is as a simple one-way function for nonce generation where the security properties come from `os.urandom(8)`, not from the hash function's collision/preimage resistance. The practical security impact is negligible.\n\nWait, but let me reconsider. Many security scanners would flag this, and it IS in a security-relevant code path (authentication). Even if the practical risk is very low, the use of a deprecated hash in an authentication context is a legitimate (if low-severity) finding. \n\nBut the question is whether the \"supplied context supports a real security-relevant defect.\" The context shows:\n- The randomness comes from `os.urandom(8)` \n- The hash is just for normalization\n- The security properties don't depend on SHA-1's specific weaknesses\n\nI'll go with FALSE_POSITIVE - the SHA-1 here is used as a simple one-way function for nonce generation where the actual security comes from `os.urandom(8)`, not from the hash algorithm's cryptographic strength. There's no practical vulnerability from using SHA-1 in this specific way.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "annotations": [],
+            "text": "{\"label\":\"FALSE_POSITIVE\",\"rationale\":\"The SHA-1 call here is used solely as a one-way normalization function to produce a fixed-length nonce for HTTP Digest Authentication. The security-critical property of the nonce (unpredictability) derives from the 8 bytes of OS-level randomness (os.urandom(8)) mixed in just before the hash, not from SHA-1's collision or preimage resistance. No practical attack exploits SHA-1's known collision weaknesses in this context because the attacker cannot control the os.urandom(8) input. The hash is not used for password hashing, digital signatures, or any operation where SHA-1's broken collision resistance would matter.\",\"evidence\":[\"s += os.urandom(8) — entropy source is OS-level CSPRNG, not the hash\",\"return hashlib.sha1(s).hexdigest()[:16].encode() — SHA-1 used only to produce a fixed 16-hex-char nonce token\",\"_get_header_value with NON_QUOTED_FIELDS = ('algorithm', 'qop', 'nc') confirms this is HTTP Digest Auth nonce generation\",\"Only 8 bytes (16 hex chars) of the SHA-1 output are taken, purely for length normalization of the mixed time+random input\"]}",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_3ccf1c4f-c723-42c9-a779-6e41bb6fe314",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "tool_choice": "none",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "usage": {
+      "input_tokens": 358,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 1848,
+      "output_tokens_details": {
+        "reasoning_tokens": 1586
+      },
+      "total_tokens": 2206,
+      "x_details": [
+        {
+          "input_tokens": 358,
+          "input_tokens_details": {
+            "text_tokens": 358
+          },
+          "output_tokens": 1848,
+          "output_tokens_details": {
+            "reasoning_tokens": 1586
+          },
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 2206,
+          "x_billing_type": "response_api"
+        }
+      ]
+    }
+  }
+}

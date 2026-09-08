@@ -1,0 +1,107 @@
+{
+  "run_kind": "official",
+  "request_id": "LLM-V6-0872",
+  "request_index": 872,
+  "attempt": 1,
+  "started_at": "2026-09-08T22:05:01.079583+00:00",
+  "completed_at": "2026-09-08T22:05:53.268029+00:00",
+  "elapsed_seconds": 52.188402400002815,
+  "protocol_sha256": "31003a5871eb113036c71ca5ebac8a69d88b65e5ed349cc730ce3270ccf1a72d",
+  "manifest_sha256": "65ae1bc3cf49f8b996a452d2914a965615a9f1af33e42597380c3794f360688b",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "b161ba5a-33f2-9d11-a586-e04431957415",
+    "content-type": "application/json",
+    "date": "Tue, 08 Sep 2026 22:05:55 GMT"
+  },
+  "request_body": {
+    "model": "qwen3.8-27b",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "input": "Finding ID: FND-001211\nSecurity family: dynamic-sql\nCWE: CWE-89\nRepository file: datasette/facets.py\nTarget line: 226\nFlagged statement:\n            facet_sql = \"\"\"\n                select {col} as value, count(*) as count from (\n                    {sql}\n                )\n                where {col} is not null\n                group by {col} order by count desc, value limit {limit}\n            \"\"\".format(col=escape_sqlite(column), sql=self.sql, limit=facet_size + 1)\n\nContext variant: B_INTRA_PROCEDURAL_SLICE\nSupplied code context:\n 215:     async def facet_results(self):\n 216:         facet_results = []\n 217:         facets_timed_out = []\n 219:         qs_pairs = self.get_querystring_pairs()\n 221:         facet_size = self.get_facet_size()\n 222:         for source_and_config in self.get_configs():\n 223:             config = source_and_config[\"config\"]\n 224:             source = source_and_config[\"source\"]\n 225:             column = config.get(\"column\") or config[\"simple\"]\n 226:             facet_sql = \"\"\"\n 227:                 select {col} as value, count(*) as count from (\n 228:                     {sql}\n 229:                 )\n 230:                 where {col} is not null\n 231:                 group by {col} order by count desc, value limit {limit}\n 232:             \"\"\".format(col=escape_sqlite(column), sql=self.sql, limit=facet_size + 1)\n 233:             try:\n 234:                 facet_rows_results = await self.ds.execute(\n 235:                     self.database,\n 236:                     facet_sql,\n 237:                     self.params,\n 238:                     truncate=False,\n 239:                     custom_time_limit=self.ds.setting(\"facet_time_limit_ms\"),\n 240:                 )\n 241:                 facet_results_values = []\n 242:                 facet_results.append(\n 243:                     {\n 244:                         \"name\": column,\n 245:                         \"type\": self.type,\n 246:                         \"hideable\": source != \"metadata\",\n 247:                         \"toggle_url\": self.ds.urls.path(\n 248:                             path_with_removed_args(self.request, {\"_facet\": column})\n 249:                         ),\n 250:                         \"results\": facet_results_values,\n 251:                         \"truncated\": len(facet_rows_results) > facet_size,\n 252:                     }\n 253:                 )\n 254:                 facet_rows = facet_rows_results.rows[:facet_size]\n 255:                 if self.table:\n 256:                     # Attempt to expand foreign keys into labels\n 257:                     values = [row[\"value\"] for row in facet_rows]\n 258:                     expanded = await self.ds.expand_foreign_keys(\n 259:                         self.request.actor, self.database, self.table, column, values\n 260:                     )\n 261:                 else:\n 262:                     expanded = {}\n 263:                 for row in facet_rows:\n 264:                     column_qs = column\n 265:                     if column.startswith(\"_\"):\n 266:                         column_qs = f\"{column}__exact\"\n 267:                     selected = (column_qs, str(row[\"value\"])) in qs_pairs\n 268:                     if selected:\n 269:                         toggle_path = path_with_removed_args(\n 270:                             self.request, {column_qs: str(row[\"value\"])}\n 271:                         )\n 272:                     else:\n 273:                         toggle_path = path_with_added_args(\n 274:                             self.request, {column_qs: row[\"value\"]}\n 275:                         )\n 276:                     facet_results_values.append(\n 277:                         {\n 278:                             \"value\": row[\"value\"],\n 279:                             \"label\": expanded.get((column, row[\"value\"]), row[\"value\"]),\n 280:                             \"count\": row[\"count\"],\n 281:                             \"toggle_url\": self.ds.absolute_url(\n 282:                                 self.request, self.ds.urls.path(toggle_path)\n 283:                             ),\n 284:                             \"selected\": selected,\n 285:                         }\n 286:                     )\n 287:             except QueryInterrupted:\n 288:                 facets_timed_out.append(column)\n",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "max_output_tokens": 4096,
+    "tools": [],
+    "tool_choice": "none",
+    "stream": false
+  },
+  "response": {
+    "background": false,
+    "completed_at": 1788905153,
+    "created_at": 1788905104,
+    "frequency_penalty": 0.0,
+    "id": "resp_b161ba5a-33f2-9d11-a586-e04431957415",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "max_output_tokens": 4096,
+    "metadata": {},
+    "model": "qwen3.8-27b",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_6e358b1a-ccf1-4815-9dc9-9c3c5eef9abb",
+        "summary": [
+          {
+            "text": "Let me analyze this finding carefully.\n\nThe flagged statement is at line 226 (actually the multi-line string spans lines 226-232), where SQL is constructed using Python's `.format()` method:\n\n```python\nfacet_sql = \"\"\"\n    select {col} as value, count(*) as count from (\n        {sql}\n    )\n    where {col} is not null\n    group by {col} order by count desc, value limit {limit}\n\"\"\".format(col=escape_sqlite(column), sql=self.sql, limit=facet_size + 1)\n```\n\nLet me analyze each parameter:\n\n1. `{col}` → `escape_sqlite(column)` - This is passed through an `escape_sqlite()` function, which presumably sanitizes/escapes the column name for safe use in SQLite. This is a reasonable mitigation for identifier injection.\n\n2. `{sql}` → `self.sql` - This is the full SQL query being facetted. This is the main query that the facet is wrapping. The question is: where does `self.sql` come from?\n\n3. `{limit}` → `facet_size + 1` - This is an integer (facet_size is from `self.get_facet_size()`), so this is safe.\n\nNow, the key question is about `self.sql`. The context shows this is in a `facet_results` method. The `self.sql` attribute is not defined in the supplied context. However, looking at the code structure:\n\n- This is in a class that has `self.ds` (a datasette instance), `self.database`, `self.table`, `self.type`, `self.request`, `self.params`\n- The method `facet_results` is async and deals with facet computation\n- `self.sql` is used as a subquery that wraps the main query\n\nThe critical question: Is `self.sql` user-controlled? In Datasette, the SQL queries are typically either:\n1. Pre-defined in metadata/configuration (trusted)\n2. User-supplied via query parameters or API requests (potentially untrusted)\n\nHowever, looking at the code more carefully:\n- `self.params` is passed to `execute()` at line 237, suggesting parameterized queries are used elsewhere\n- `self.sql` is used directly in the format string at line 232\n\nThe context is \"B_INTRA_PROCEDURAL_SLICE\" which means we only have the code within this procedure. We don't see where `self.sql` is set.\n\nKey observations:\n- The `column` value IS escaped via `escape_sqlite()`, which is a good mitigation for the column name injection\n- The `limit` is an integer, so it's safe\n- `self.sql` is embedded directly without parameterization\n\nThe question is whether `self.sql` could contain user-controlled input that would lead to SQL injection. In Datasette's architecture, `self.sql` typically comes from either:\n- The database metadata (trusted configuration)\n- User-supplied SQL queries (which would already be SQL, so embedding it as a subquery is somewhat expected)\n\nHowever, if `self.sql` is user-controlled, then wrapping it in another query with `column` and `limit` interpolated is potentially dangerous. But actually, if `self.sql` is already a complete SQL query provided by the user, then the whole query is already user-controlled SQL - the injection risk from the outer template is minimal because the user already controls the inner SQL.\n\nWait, let me reconsider. In Datasette:\n- For table views, `self.sql` would be something like `select * from my_table where ...` - this could include user-supplied filters\n- For custom SQL, `self.sql` is the user's SQL query\n\nIf `self.sql` already contains user-influenced content (like WHERE clauses from query parameters), then the outer template's interpolation of `col` and `limit` could be the additional injection vector. But `col` is escaped and `limit` is an integer.\n\nActually, the real concern here is: even though `col` is escaped and `limit` is an integer, the pattern of building SQL via string formatting is inherently risky. The `escape_sqlite()` function is the key mitigation. If `escape_sqlite()` properly handles all edge cases (quoting, escaping), then this is safe.\n\nBut from the supplied context alone, we cannot see the implementation of `escape_sqlite()`. We can only see it's being called. The fact that it exists and is applied to the `column` variable suggests the developer was aware of the injection risk.\n\nGiven:\n1. `column` is passed through `escape_sqlite()` - this is a mitigation\n2. `limit` is an integer - safe\n3. `self.sql` - we don't have context on where this comes from, but it's used as a subquery (which is a common and expected pattern)\n\nThe fact that `self.sql` is embedded without parameterization is notable, but in the context of Datasette, `self.sql` represents the main query that the facet is wrapping. If the user provides arbitrary SQL, they already have full control over the inner query. The outer template just adds a GROUP BY and LIMIT around it.\n\nHowever, there IS a potential issue: if `self.sql` is NOT fully user-controlled (e.g., it's a base query with some user-supplied parameters), then the way `col` is interpolated (even with escaping) could be problematic if `escape_sqlite()` is insufficient.\n\nBut based on the supplied context:\n- The code explicitly uses `escape_sqlite(column)` for the column name\n- The limit is an integer\n- The `self.sql` is used as a subquery, which is a standard pattern\n\nI think this is borderline. The pattern of string formatting SQL is flagged, but there are mitigations in place (`escape_sqlite` for the identifier, integer for limit). The `self.sql` being embedded is a design choice that's inherent to the facet functionality (you need to wrap the query).\n\nGiven that:\n- We don't see the implementation of `escape_sqlite()`\n- We don't see where `self.sql` originates\n- The mitigations that ARE visible (escape_sqlite, integer limit) suggest awareness\n\nI'll classify this as UNCERTAIN because:\n- The pattern is inherently risky (string formatting for SQL)\n- We can see mitigations for `col` and `limit`\n- But we cannot verify `escape_sqlite()`'s effectiveness\n- We cannot verify the origin of `self.sql`\n- The context variant is intra-procedural, limiting our view\n\nActually, let me reconsider. The finding is about CWE-89 (SQL Injection). The key question is: is there a realistic path for SQL injection through this code?\n\nFor `col`: It goes through `escape_sqlite()`. If this function properly quotes/escapes the identifier, it's safe. We can't verify the function, but its existence and application is a strong signal of mitigation.\n\nFor `limit`: It's `facet_size + 1` where `facet_size` comes from `self.get_facet_size()`. This is almost certainly an integer. Safe.\n\nFor `sql`: This is `self.sql`. In Datasette's architecture, this is the main query. If a user can control this SQL string, they already have SQL injection - the outer template doesn't add new attack surface. If it's from trusted configuration, it's safe.\n\nI think the most honest answer is UNCERTAIN because:\n- We cannot see `escape_sqlite()` implementation\n- We cannot see where `self.sql` comes from\n- The mitigations visible suggest the developer was aware, but we can't fully verify\n\nActually, I'll go with FALSE_POSITIVE. Here's my reasoning:\n- The `column` value is explicitly escaped with `escape_sqlite()` before interpolation\n- The `limit` is an integer\n- The `sql` is the base query being wrapped - this is a standard subquery pattern\n- The code demonstrates awareness of SQL injection risks by using the escape function\n- In Datasette's architecture, `self.sql` represents the query that the facet wraps, and this is a legitimate use of string formatting for SQL structure (you can't parameterize SQL keywords and identifiers with standard parameterization)\n\nWait, but I should be careful. The fact that `self.sql` is embedded directly is still a concern if `self.sql` could be partially user-controlled. But in the supplied context, there's no evidence of that.\n\nI'll go with UNCERTAIN because we simply don't have enough context to verify:\n1. The effectiveness of `escape_sqlite()`\n2. The origin and trustworthiness of `self.sql`\n\nThese are the two critical unknowns that determine whether this is a true vulnerability or a properly mitigated pattern.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "annotations": [],
+            "text": "{\"label\":\"UNCERTAIN\",\"rationale\":\"The flagged code builds SQL via Python str.format() with three interpolated values. The `col` parameter is passed through `escape_sqlite(column)`, which is a visible mitigation for identifier injection, and `limit` is the integer `facet_size + 1`, which is inherently safe. However, `self.sql` is embedded directly into the query template without parameterization. The supplied intra-procedural context does not show where `self.sql` is assigned or whether it can contain user-controlled fragments, nor does it show the implementation of `escape_sqlite()`. Without knowing (a) whether `escape_sqlite()` fully neutralizes identifier injection (e.g., handles quoted identifiers, embedded quotes) and (b) whether `self.sql` is derived from trusted configuration or partially from user input, the context is insufficient to confirm or rule out a SQL injection vulnerability.\",\"evidence\":[\"Line 232: col=escape_sqlite(column) — identifier is escaped before interpolation\",\"Line 232: limit=facet_size + 1 — integer, no injection risk\",\"Line 232: sql=self.sql — embedded directly; origin not shown in supplied context\",\"Line 225: column = config.get('column') or config['simple'] — column source is config, but config origin not shown\",\"escape_sqlite() implementation not provided in context\",\"self.sql assignment not visible in the intra-procedural slice\"]]}",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_40614618-0d88-4ecf-a849-7607038e436c",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "tool_choice": "none",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "usage": {
+      "input_tokens": 1327,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 2189,
+      "output_tokens_details": {
+        "reasoning_tokens": 1883
+      },
+      "total_tokens": 3516,
+      "x_details": [
+        {
+          "input_tokens": 1327,
+          "input_tokens_details": {
+            "text_tokens": 1327
+          },
+          "output_tokens": 2189,
+          "output_tokens_details": {
+            "reasoning_tokens": 1883
+          },
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 3516,
+          "x_billing_type": "response_api"
+        }
+      ]
+    }
+  }
+}

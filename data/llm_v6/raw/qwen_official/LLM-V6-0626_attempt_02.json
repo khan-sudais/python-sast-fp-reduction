@@ -1,0 +1,107 @@
+{
+  "run_kind": "official",
+  "request_id": "LLM-V6-0626",
+  "request_index": 626,
+  "attempt": 2,
+  "started_at": "2026-09-08T20:10:41.099321+00:00",
+  "completed_at": "2026-09-08T20:10:57.338144+00:00",
+  "elapsed_seconds": 16.238713500031736,
+  "protocol_sha256": "31003a5871eb113036c71ca5ebac8a69d88b65e5ed349cc730ce3270ccf1a72d",
+  "manifest_sha256": "65ae1bc3cf49f8b996a452d2914a965615a9f1af33e42597380c3794f360688b",
+  "http_status": 200,
+  "response_headers": {
+    "x-request-id": "880a9290-b46e-9043-b879-8ca1d6fd3d56",
+    "content-type": "application/json",
+    "date": "Tue, 08 Sep 2026 20:10:59 GMT"
+  },
+  "request_body": {
+    "model": "qwen3.8-27b",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "input": "Finding ID: FND-000156\nSecurity family: weak-hash\nCWE: CWE-327\nRepository file: aiohttp/web_ws.py\nTarget line: 329\nFlagged statement:\n        accept_val = base64.b64encode(\n            hashlib.sha1(key.encode() + WS_KEY).digest()\n        ).decode()\n\nContext variant: C_SAME_FILE_CALLER_EXPANSION\nSupplied code context:\n=== Target ===\nFunction: _handshake\nLine: 329\nScope: same file only\nClass: WebSocketResponse\n=== Target slice ===\n 278:     def _handshake(\n 279:         self, request: BaseRequest\n 280:     ) -> tuple[\"CIMultiDict[str]\", str | None, int, bool]:\n 281:         headers = request.headers\n 322:         key = headers.get(hdrs.SEC_WEBSOCKET_KEY)\n 329:         accept_val = base64.b64encode(\n 330:             hashlib.sha1(key.encode() + WS_KEY).digest()\n 331:         ).decode()\n\n=== Caller depth 1: _pre_start -> _handshake (line 365) ===\n 362:     def _pre_start(self, request: BaseRequest) -> tuple[str | None, WebSocketWriter]:\n 365:         headers, protocol, compress, notakeover = self._handshake(request)\n\n=== Caller depth 1: can_prepare -> _handshake (line 414) ===\n 410:     def can_prepare(self, request: BaseRequest) -> WebSocketReady:\n 413:         try:\n 414:             _, protocol, _, _ = self._handshake(request)\n\n=== Caller depth 2: prepare -> _pre_start (line 271) ===\n 266:     async def prepare(self, request: BaseRequest) -> AbstractStreamWriter:\n 267:         # make pre-check to don't hide it by do_handshake() exceptions\n 271:         protocol, writer = self._pre_start(request)\n\n=== Caller depth 3: prepare -> prepare (line 272) ===\n 266:     async def prepare(self, request: BaseRequest) -> AbstractStreamWriter:\n 267:         # make pre-check to don't hide it by do_handshake() exceptions\n 272:         payload_writer = await super().prepare(request)\n",
+    "reasoning": {
+      "effort": "medium"
+    },
+    "max_output_tokens": 4096,
+    "tools": [],
+    "tool_choice": "none",
+    "stream": false
+  },
+  "response": {
+    "background": false,
+    "completed_at": 1788898258,
+    "created_at": 1788898243,
+    "frequency_penalty": 0.0,
+    "id": "resp_880a9290-b46e-9043-b879-8ca1d6fd3d56",
+    "instructions": "You are evaluating a Python static security finding using only the supplied code context. Do not use external knowledge about the repository, do not browse, and do not assume code that is not shown. Classify the finding as TRUE_BUG when the supplied context supports a real security-relevant defect, FALSE_POSITIVE when the supplied context establishes that the flagged pattern is benign or adequately constrained, or UNCERTAIN when the supplied context is insufficient to decide. Return only valid JSON with exactly these keys: label, rationale, evidence. label must be exactly TRUE_BUG, FALSE_POSITIVE, or UNCERTAIN. rationale must be concise and grounded in the supplied code. evidence must be a JSON array of short strings identifying relevant supplied line numbers or code facts. Do not wrap the JSON in markdown fences.",
+    "max_output_tokens": 4096,
+    "metadata": {},
+    "model": "qwen3.8-27b",
+    "object": "response",
+    "output": [
+      {
+        "id": "msg_c204bde4-959b-498f-b2b3-058c9aa3963b",
+        "summary": [
+          {
+            "text": "The finding is about a weak hash (SHA-1) being used at line 329 in aiohttp's WebSocket handshake implementation.\n\nLet me analyze this:\n\n1. The code at line 329-331 computes:\n```python\naccept_val = base64.b64encode(\n    hashlib.sha1(key.encode() + WS_KEY).digest()\n).decode()\n```\n\n2. This is the standard WebSocket protocol handshake as defined in RFC 6455. The `Sec-WebSocket-Accept` header is computed by taking the SHA-1 hash of the concatenation of the `Sec-WebSocket-Key` from the client and the WebSocket magic GUID `258EAFA5-E914-47DA-95CA-C5AB0DC85B11` (which is `WS_KEY`).\n\n3. This is NOT a security-critical hash. The SHA-1 here is used as part of the WebSocket protocol specification to verify that the server understands the WebSocket protocol. It's a protocol compliance mechanism, not a security mechanism. The purpose is to prevent non-WebSocket HTTP requests from being confused with WebSocket handshakes.\n\n4. The SHA-1 is mandated by RFC 6455 (Section 4.2.2):\n\"Let key be the value of the Sec-WebSocket-Key header. The server must compute SHA-1 of the concatenation of key and '258EAFA5-E914-47DA-95CA-C5AB0DC85B11' and include the base64-encoded result in the Sec-WebSocket-Accept header.\"\n\n5. This is a protocol requirement, not a choice of hash for security purposes. All WebSocket implementations use SHA-1 here because the protocol mandates it. Changing it would break compatibility with all WebSocket clients.\n\n6. The input `key` comes from the client's `Sec-WebSocket-Key` header (line 322), but this is not a security vulnerability - it's part of the protocol handshake. The SHA-1 is not being used to authenticate anything, store passwords, verify integrity of sensitive data, etc.\n\nThis is a FALSE_POSITIVE. The SHA-1 usage here is a protocol requirement (RFC 6455) and not a security-critical hash usage. It's used purely as a protocol compliance mechanism to verify the server implements WebSocket correctly.",
+            "type": "summary_text"
+          }
+        ],
+        "type": "reasoning"
+      },
+      {
+        "content": [
+          {
+            "annotations": [],
+            "text": "{\"label\": \"FALSE_POSITIVE\", \"rationale\": \"The SHA-1 at line 329-331 is not a security-critical hash. It is the protocol-mandated computation of the Sec-WebSocket-Accept header as defined by RFC 6455 section 4.2.2, which requires SHA-1(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'). This is a compatibility mechanism to verify the server implements the WebSocket protocol, not a cryptographic security primitive. The input is the client-provided Sec-WebSocket-Key (line 322), and the output is sent back in the response headers. No authentication, integrity, or confidentiality property depends on this hash; changing it would break interoperability with every WebSocket client.\", \"evidence\": [\"line 329-331: base64.b64encode(hashlib.sha1(key.encode() + WS_KEY).digest()).decode() is the RFC 6455 Sec-WebSocket-Accept computation\", \"line 322: key = headers.get(hdrs.SEC_WEBSOCKET_KEY) - input is the protocol-mandated client key\", \"line 329-331: result is assigned to accept_val, used as a response header per WebSocket protocol, not for authentication or data integrity\", \"WS_KEY is the RFC 6455 magic GUID 258EAFA5-E914-47DA-95CA-C5AB0DC85B11, making this a fixed protocol handshake step\"]}",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_81fd387a-68aa-45d3-bca4-fbdc24ad644f",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "reasoning": {
+      "effort": "medium"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "tool_choice": "none",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "usage": {
+      "input_tokens": 763,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 863,
+      "output_tokens_details": {
+        "reasoning_tokens": 511
+      },
+      "total_tokens": 1626,
+      "x_details": [
+        {
+          "input_tokens": 763,
+          "input_tokens_details": {
+            "text_tokens": 763
+          },
+          "output_tokens": 863,
+          "output_tokens_details": {
+            "reasoning_tokens": 511
+          },
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          },
+          "total_tokens": 1626,
+          "x_billing_type": "response_api"
+        }
+      ]
+    }
+  }
+}
