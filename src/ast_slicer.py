@@ -187,13 +187,19 @@ class PythonProgramSlicer:
     def extract_variant_b(self, target_line):
         function_node = self._enclosing_function(target_line)
         if function_node is None:
-            return self.extract_variant_a(target_line, window=5)
+            result = self.extract_variant_a(target_line, window=5)
+            result["fallback_from"] = "B_INTRA_PROCEDURAL_SLICE"
+            result["fallback_reason"] = "no_enclosing_function"
+            return result
 
         records = self._statement_records(function_node)
         target_statement = self._target_statement(function_node, target_line)
 
         if target_statement is None:
-            return self.extract_variant_a(target_line, window=5)
+            result = self.extract_variant_a(target_line, window=5)
+            result["fallback_from"] = "B_INTRA_PROCEDURAL_SLICE"
+            result["fallback_reason"] = "no_target_statement"
+            return result
 
         controls_by_id = {id(statement): controls for statement, controls in records}
         relevant_nodes = {id(target_statement): target_statement}
@@ -286,7 +292,8 @@ class PythonProgramSlicer:
 
         if target_function is None:
             return {
-                "variant": "C_INTER_PROCEDURAL_TAINT_SLICE",
+                "variant": "C_SAME_FILE_CALLER_EXPANSION",
+                "scope": "same_file",
                 "target_line": target_line,
                 "call_depth": 0,
                 "callers": [],
@@ -298,6 +305,7 @@ class PythonProgramSlicer:
         callers_output = []
         visited = {target_function.name}
         frontier = [(target_function.name, 0)]
+        seen_edges = set()
 
         while frontier:
             callee_name, depth = frontier.pop(0)
@@ -306,9 +314,10 @@ class PythonProgramSlicer:
 
             for caller_function, call_node in self._caller_sites(callee_name):
                 edge_key = f"{caller_function.name}:{call_node.lineno}->{callee_name}"
-                if edge_key in {item["edge"] for item in callers_output}:
+                if edge_key in seen_edges:
                     continue
 
+                seen_edges.add(edge_key)
                 caller_slice = self.extract_variant_b(call_node.lineno)
                 callers_output.append(
                     {
@@ -334,6 +343,7 @@ class PythonProgramSlicer:
             "=== Target ===",
             f"Function: {target_function.name}",
             f"Line: {target_line}",
+            "Scope: same file only",
         ]
 
         if class_node is not None:
@@ -350,7 +360,8 @@ class PythonProgramSlicer:
         output_parts.extend(sections)
 
         return {
-            "variant": "C_INTER_PROCEDURAL_TAINT_SLICE",
+            "variant": "C_SAME_FILE_CALLER_EXPANSION",
+            "scope": "same_file",
             "function_name": target_function.name,
             "class_name": class_node.name if class_node is not None else None,
             "target_line": target_line,
